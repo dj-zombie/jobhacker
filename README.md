@@ -6,6 +6,10 @@ sources (JSearch with your own key, Hacker News "Who is hiring"), ranks them aga
 criteria, prepares tailored application materials, and fills application forms **in your own
 Chrome** — so you review and click **Submit** yourself.
 
+![JobHacker triage: a ranked queue beside the selected job, with the score and the reasons behind it.](docs/screenshots/triage.png)
+
+More of the interface is in [docs/screenshots](docs/screenshots/README.md). These pictures are the running app with sample data, not a live search.
+
 It is built to be safe by design:
 
 - **It never submits an application.** It only fills fields; you submit every one.

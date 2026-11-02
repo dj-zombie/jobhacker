@@ -45,7 +45,7 @@ sources    pipeline         llm        prep        apply          db
 ```
 AGENTS.md                  agent rules (read first)
 README.md                  setup, daily use, scheduling
-docs/                      ARCHITECTURE, reference/, testing/old-tokens.txt (the planning docs stay private)
+docs/                      ARCHITECTURE, reference/, testing/old-tokens.txt, screenshots/ (the planning docs stay private)
 .cursor/rules/             always-on pointer to AGENTS.md
 ui-reference/              the visual spec: the prototype, its source and frames (excluded from the build)
 config/
