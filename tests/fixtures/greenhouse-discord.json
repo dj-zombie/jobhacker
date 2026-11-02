@@ -1,0 +1,128 @@
+{
+  "jobs": [
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/discord/jobs/8806482002",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": true
+        }
+      ],
+      "internal_job_id": 6524134002,
+      "location": {
+        "name": "San Francisco Bay Area"
+      },
+      "metadata": [
+        {
+          "id": 4105571002,
+          "name": "Featured on Website",
+          "value": [],
+          "value_type": "multi_select"
+        },
+        {
+          "id": 96196709002,
+          "name": "Careers Site Department",
+          "value": null,
+          "value_type": "single_select"
+        }
+      ],
+      "id": 8806482002,
+      "updated_at": "2026-10-20T20:27:20-04:00",
+      "requisition_id": "R-107406",
+      "title": "Commercial Policy Lead",
+      "company_name": "Discord",
+      "first_published": "2026-09-15T12:52:11-04:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;Discord has a highly engaged community of millions of daily active users who use the platform for many different reasons, but there’s one thing that nearly everyone does: &lt;strong&gt;play video games.&lt;/strong&gt; Discord plays a uniquely important role in the future of gaming, and we are focused on making it easier and more fun for people to hang out before, during, and after playing games.&lt;/p&gt;&lt;/div&gt;&lt;p&gt;We are seeking a strategic Commercial Policy Lead to shape Discord&#39;s approach to monetization and revenue products. As a key member of the Product Policy organization, you will develop and implement advertising and commerce policies that enable Discord&#39;s business while maintaining platform safety and user trust. This role requires a deep understanding of digital commerce, creator economies, and advertising ecosystems, with the ability to balance business objectives with responsible platform practices.&lt;/",
+      "departments": [
+        {
+          "id": 4054683002,
+          "name": "Policy",
+          "child_ids": [],
+          "parent_id": 4094263002
+        }
+      ],
+      "offices": [
+        {
+          "id": 4082816002,
+          "name": "Remote (US)",
+          "location": null,
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "ai_disclaimer": null,
+      "include_ai_disclaimer": false,
+      "ai_opt_out_request_url": "http://app2.greenhouse.io/ai_opt_out_request/job_post/8806482002/ai_opt_out"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/discord/jobs/8464570002",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": true
+        }
+      ],
+      "education": "education_optional",
+      "internal_job_id": 6381141002,
+      "location": {
+        "name": "Remote"
+      },
+      "metadata": [
+        {
+          "id": 4105571002,
+          "name": "Featured on Website",
+          "value": [],
+          "value_type": "multi_select"
+        },
+        {
+          "id": 96196709002,
+          "name": "Careers Site Department",
+          "value": null,
+          "value_type": "single_select"
+        }
+      ],
+      "id": 8464570002,
+      "updated_at": "2026-10-21T15:02:58-04:00",
+      "requisition_id": "R-107208",
+      "title": "Staff Software Engineer - Consumer Revenue",
+      "company_name": "Discord",
+      "first_published": "2026-09-02T19:29:30-04:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;Discord has a highly engaged community of millions of daily active users who use the platform for many different reasons, but there’s one thing that nearly everyone does: &lt;strong&gt;play video games.&lt;/strong&gt; Discord plays a uniquely important role in the future of gaming, and we are focused on making it easier and more fun for people to hang out before, during, and after playing games.&lt;/p&gt;&lt;/div&gt;&lt;p&gt;The &lt;strong&gt;Consumer Revenue&lt;/strong&gt; org sits at the center of how we build a sustainable business around that community. We&#39;re looking for a talented &lt;strong&gt;Staff Engineer &lt;/strong&gt;to join teams working across premium experiences and core user identity, shaping the technical strategy that ties it all together. You&#39;ll work across surfaces like &lt;strong&gt;Nitro, Shop, Server Boosting, and User Identity&lt;/strong&gt; to build a premium Discord that delivers real value to subscri",
+      "departments": [
+        {
+          "id": 4074054002,
+          "name": "Product Engineering",
+          "child_ids": [],
+          "parent_id": 4094266002
+        }
+      ],
+      "offices": [
+        {
+          "id": 4082816002,
+          "name": "Remote (US)",
+          "location": null,
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "ai_disclaimer": null,
+      "include_ai_disclaimer": false,
+      "ai_opt_out_request_url": "http://app2.greenhouse.io/ai_opt_out_request/job_post/8464570002/ai_opt_out"
+    }
+  ],
+  "meta": {
+    "total": 44
+  }
+}

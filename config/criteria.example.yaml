@@ -1,0 +1,74 @@
+# Copy to criteria.yaml (gitignored) and edit. This file documents the schema.
+# Mechanical settings only: hard gates, ranking weights, verdict bands, the per-run
+# scoring cap, models and places (geography). Taste (roles, pay, interests) lives in
+# preferences.md as prose.
+# Upgrading from the v1 keyword-list format? Run `pnpm cli config:migrate`.
+
+gates:                       # the ONLY hard exclusions; closed and duplicate postings are automatic
+  max_age_days: 0            # gate postings first published more than N days ago; 0 = off.
+                             # ATS boards drop closed postings, and many good roles stay open for
+                             # months, so keep this generous or off. `pnpm cli funnel` shows the ages.
+  company_blocklist: []      # exact company names to never show
+
+weights:                     # how much each dimension counts in the ranked score (0 = ignore it)
+  role_fit: 3                # function/work shape only; not level or management track
+  tech_fit: 2                # stack overlap with your actual experience
+  domain_interest: 2         # how much the company's domain matches what preferences.md says excites you
+  seniority_fit: 2           # level and IC/management track
+  logistics_fit: 4           # remote / location / employment type vs what you can accept
+  comp_fit: 1                # against your floor; unknown pay drops out (neutral)
+# ranked score = sum(weight x dim) / sum(weight over known dims) x 20, so 0-100.
+# A 0 in role/seniority/logistics caps at "no"; a 1 caps below "strong".
+# Changing weights re-ranks instantly with no API calls.
+
+bands:                       # verdict thresholds on the 0-100 ranked score
+  strong: 75
+  maybe: 55
+
+# Your places: example metros, replace them with your own. The Where filter and the scoring
+# order read these. This is geography, not taste: it's parsed as city and state, never
+# substring-matched. An optional `note:` shows as a hint next to the filter.
+places:
+  - id: portland
+    label: Portland
+    cities: [Portland, Beaverton, Hillsboro, Tigard, Tualatin, Lake Oswego, Wilsonville, Gresham,
+             Milwaukie, Happy Valley, Oregon City, West Linn, Sherwood, Clackamas, Forest Grove]
+    states: [OR, Oregon]
+    extra: ["Vancouver, WA", "Camas, WA", "Washougal, WA"]   # the metro across the river
+    aliases: ["Greater Portland", "Portland Metro", "Portland Metropolitan"]
+  - id: phoenix
+    label: Phoenix
+    cities: [Phoenix, Scottsdale, Tempe, Mesa, Chandler, Gilbert, Glendale, Peoria, Surprise,
+             Goodyear, Avondale, Queen Creek, Paradise Valley, Fountain Hills, Cave Creek, Buckeye,
+             Casa Grande]
+    states: [AZ, Arizona]
+    aliases: ["Greater Phoenix", "Phoenix Metro", "Phoenix Metropolitan", "Valley of the Sun"]
+remote:
+  countries: [US]          # remote roles open to these countries, or naming none, count as Remote
+where_default: [portland, phoenix, remote]
+
+budget:
+  prescore_floor: 0          # compatibility field: MUST remain 0; prescore orders but never excludes
+  max_new_scores_per_run: 150  # scoring walks jobs in prescore order up to this many new calls
+
+llm:
+  scoring_model: claude-haiku-5-5   # cheap scoring; this model still accepts a forced tool
+  writing_model: claude-sonnet-5-5  # writing. The client uses tool_choice auto for this id (DECISIONS D20)
+
+# Per-source settings. API keys live in .env, never here.
+sources:
+  boards:
+    enabled: [greenhouse, lever, ashby, smartrecruiters, breezy, polymer]
+    # workable and teamtailor need per-account keys; enable once keys are in .env
+  search:
+    jsearch:
+      enabled: true
+      monthly_call_budget: 200     # free tier; raise to 10000 on the $25/mo plan
+    jobspipe:
+      enabled: false
+      monthly_call_budget: 0
+    hn:
+      enabled: true
+      monthly_call_budget: 100
+  workday:
+    enabled: false                 # undocumented endpoint, see SOURCES § Workday

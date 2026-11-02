@@ -1,0 +1,36 @@
+/* Prototype only. In Next.js, fonts come from `geist/font/sans` and `geist/font/mono` (see kit README). */
+@font-face {
+  font-family: "Geist";
+  src: url("../../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../../node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* The artifact host wraps the page in its own unlayered reset (light color-scheme,
+   14px system body font). Tailwind's base styles live in a cascade layer and would
+   lose to it, so restate the essentials here, unlayered. */
+:root {
+  color-scheme: dark;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: #07080b;
+  color: #eceef3;
+  font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+  overflow: hidden;
+}

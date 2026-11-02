@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply — Acme (Ashby)</title>
+  </head>
+  <body>
+    <!--
+      Trimmed stand-in for jobs.ashbyhq.com application markup, modelled on the
+      live Linear, Ramp, OpenAI and Sentry forms read on 2026-10-23:
+        - there is NO <form> element; "Submit Application" is a script-driven
+          button with no type (a click on it is counted in window.__ashbySubmits);
+        - each question is an .ashby-application-form-field-entry whose title
+          carries a _required_ class when required, and whose input may have no id
+          (the Location autocomplete);
+        - Yes/No questions are two <button aria-pressed data-option> with no type
+          plus a hidden backing checkbox;
+        - an unlabeled "Autofill from resume" file input that must stay empty;
+        - the EEO survey sits in .ashby-survey-form-container and stays untouched.
+    -->
+    <main>
+      <div class="ashby-application-form-autofill-input-root" role="presentation">
+        <input id="autofill" type="file" tabindex="-1" />
+        <h3 class="ashby-application-form-autofill-input-title">Autofill from resume</h3>
+      </div>
+
+      <div class="ashby-application-form-container">
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="_systemfield_name">Name</label>
+          <input id="_systemfield_name" name="_systemfield_name" type="text" class="ashby-application-form-input-text" />
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="_systemfield_email">Email</label>
+          <input id="_systemfield_email" name="_systemfield_email" type="email" />
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="_systemfield_resume">Resume</label>
+          <input id="_systemfield_resume" name="_systemfield_resume" type="file" style="display: none" />
+          <button class="ashby-application-form-input-file-dropzone-upload">Upload File</button>
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="_systemfield_location">Location</label>
+          <div class="_inputContainer">
+            <input
+              class="ashby-application-form-input-autocomplete"
+              placeholder="Start typing..."
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-haspopup="listbox"
+              role="combobox"
+              aria-controls="loc-list"
+              value=""
+            />
+          </div>
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="github">GitHub</label>
+          <div class="ashby-application-form-question-description"><p>Please provide your GitHub username</p></div>
+          <input id="github" name="github" type="text" />
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading ashby-application-form-question-title" for="cover">Cover letter</label>
+          <textarea id="cover" name="cover"></textarea>
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="essay">Tell us more</label>
+          <div class="ashby-application-form-question-description">
+            <p>Tell us about a complex project you led end to end.</p>
+          </div>
+          <textarea id="essay" name="essay"></textarea>
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="country">What country are you based in?</label>
+          <input id="country" name="country" type="text" />
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="question_1">Are you based in a US or equivalent timezone?</label>
+          <div class="ashby-application-form-input-yesno">
+            <button class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes">Yes</button>
+            <button class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="no">No</button>
+            <input type="checkbox" tabindex="-1" name="question_1" />
+          </div>
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="question_2">Are you comfortable completing a take-home assignment?</label>
+          <div class="ashby-application-form-input-yesno">
+            <button class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes">Yes</button>
+            <button class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="no">No</button>
+            <input type="checkbox" tabindex="-1" name="question_2" />
+          </div>
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <fieldset class="ashby-application-form-input-radio-group">
+            <label class="_heading ashby-application-form-question-title" for="arrangement">Which work arrangement do you prefer?</label>
+            <div><input type="radio" id="arr-0" name="arrangement" /><label for="arr-0">Remote</label></div>
+            <div><input type="radio" id="arr-1" name="arrangement" /><label for="arr-1">Hybrid</label></div>
+            <div><input type="radio" id="arr-2" name="arrangement" /><label for="arr-2">Onsite</label></div>
+          </fieldset>
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <label class="_heading _required_f7cvd_91 ashby-application-form-question-title" for="pronouns">Pronouns</label>
+          <input id="pronouns" name="pronouns" type="text" />
+        </div>
+        <div class="ashby-application-form-field-entry">
+          <fieldset class="ashby-application-form-input-radio-group">
+            <label class="_heading ashby-application-form-question-title" for="sms">Phone</label>
+            <div><input type="radio" id="sms-0" name="sms" /><label for="sms-0">I agree to receive text messages</label></div>
+            <div><input type="radio" id="sms-1" name="sms" /><label for="sms-1">I do not agree</label></div>
+          </fieldset>
+        </div>
+
+        <div class="ashby-survey-form-container">
+          <p><strong>U.S. EQUAL EMPLOYMENT OPPORTUNITY INFORMATION</strong></p>
+          <fieldset class="ashby-application-form-input-radio-group">
+            <label class="_heading ashby-application-form-question-title" for="eeo_gender">Gender</label>
+            <div><input type="radio" id="g-0" name="eeo_gender" /><label for="g-0">Male</label></div>
+            <div><input type="radio" id="g-1" name="eeo_gender" /><label for="g-1">Female</label></div>
+          </fieldset>
+          <fieldset class="ashby-application-form-input-radio-group">
+            <label class="_heading ashby-application-form-question-title" for="eeo_status">Status</label>
+            <div><input type="radio" id="s-0" name="eeo_status" /><label for="s-0">Decline to self-identify</label></div>
+          </fieldset>
+        </div>
+
+        <button class="ashby-application-form-submit-button"><span>Submit Application</span></button>
+      </div>
+    </main>
+    <script>
+      (function () {
+        window.__ashbySubmits = 0;
+        document
+          .querySelector('.ashby-application-form-submit-button')
+          .addEventListener('click', function () {
+            window.__ashbySubmits += 1;
+          });
+
+        // Yes/No toggles: pressing one sets aria-pressed and the backing checkbox
+        // on a later tick, as React does on the live page (not during the click).
+        document.addEventListener('click', function (e) {
+          var opt = e.target.closest ? e.target.closest('.ashby-application-form-input-yesno-option') : null;
+          if (!opt) return;
+          var group = opt.parentElement;
+          setTimeout(function () {
+            group.querySelectorAll('button').forEach(function (b) {
+              b.setAttribute('aria-pressed', b === opt ? 'true' : 'false');
+            });
+            group.querySelector('input').checked = opt.getAttribute('data-option') === 'yes';
+          }, 50);
+        });
+
+        // Location autocomplete: suggestions appear after typing, in a portal listbox.
+        var PLACES = [
+          'Scottsdale, Arizona, United States',
+          'Scottsdale, Tasmania, Australia',
+          'Phoenix, Arizona, United States',
+        ];
+        var input = document.querySelector('.ashby-application-form-input-autocomplete');
+        input.addEventListener('input', function () {
+          var old = document.getElementById('loc-list');
+          if (old) old.remove();
+          var q = input.value.trim().toLowerCase();
+          if (!q) return;
+          setTimeout(function () {
+            var list = document.createElement('div');
+            list.id = 'loc-list';
+            list.setAttribute('role', 'listbox');
+            PLACES.filter(function (p) {
+              return p.toLowerCase().indexOf(q) === 0;
+            }).forEach(function (p) {
+              var o = document.createElement('div');
+              o.setAttribute('role', 'option');
+              o.textContent = p;
+              list.appendChild(o);
+            });
+            document.body.appendChild(list);
+            input.setAttribute('aria-expanded', 'true');
+          }, 150);
+        });
+        document.addEventListener('click', function (e) {
+          var o = e.target.closest ? e.target.closest('#loc-list [role=option]') : null;
+          if (!o) return;
+          input.value = o.textContent;
+          input.setAttribute('aria-expanded', 'false');
+          document.getElementById('loc-list').remove();
+        });
+      })();
+    </script>
+  </body>
+</html>

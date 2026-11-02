@@ -1,0 +1,398 @@
+import * as React from "react";
+import {
+  Bookmark,
+  BellRing,
+  CircleDashed,
+  FileText,
+  Images,
+  Inbox,
+  Keyboard,
+  Radar,
+  Rows3,
+  Send,
+  SlidersHorizontal,
+  Sparkles,
+} from "lucide-react";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import {
+  AppSidebar,
+  AppToaster,
+  CommandPalette,
+  CompanyLogo,
+  ScoutCard,
+  ShortcutsDialog,
+  toast,
+  type NavSection,
+  type PaletteGroup,
+  type ScoutStatus,
+} from "@/components/jobhacker";
+import { formatCompact, formatCount } from "@/lib/format";
+import { STATS } from "./data";
+import { demoLogoUrl } from "./logos";
+import { initialState, inWhere, rank, bandFor, reducer, type Action, type State } from "./model";
+import { companyLogoRows, logosMissing, useLogoOverrides, useLogoPicker } from "./logo-store";
+import { navigate, usePath } from "./router";
+import { TriageView } from "./views/TriageView";
+import { ApplicationsView } from "./views/ApplicationsView";
+import { CompanyLogosView } from "./views/CompanyLogosView";
+import { LogoPickerDialog } from "./views/LogoPickerDialog";
+import { WorkspaceView } from "./views/WorkspaceView";
+
+interface DemoCtx {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+  isMobile: boolean;
+  openPalette: () => void;
+  openMobileNav: () => void;
+  runScout: () => void;
+}
+
+const Ctx = React.createContext<DemoCtx | null>(null);
+
+// `?scout=attention` or `?scout=failed` shows the scout card's warning states (frame 26).
+const SCOUT_DEMO = typeof location !== "undefined" ? new URLSearchParams(location.search).get("scout") : null;
+const SCOUT_STATE: { status: ScoutStatus; notices: string[] } =
+  SCOUT_DEMO === "failed"
+    ? { status: "failed", notices: ["The 6:00 scout stopped: database is locked"] }
+    : SCOUT_DEMO === "attention"
+      ? { status: "attention", notices: ["JSearch is at its monthly budget", "3 boards failed in the last run"] }
+      : { status: "ok", notices: [] };
+export function useDemo(): DemoCtx {
+  const c = React.useContext(Ctx);
+  if (!c) throw new Error("useDemo outside provider");
+  return c;
+}
+
+function useMediaQuery(q: string): boolean {
+  const get = () => (typeof window !== "undefined" ? window.matchMedia(q).matches : false);
+  const [m, setM] = React.useState(get);
+  React.useEffect(() => {
+    const mq = window.matchMedia(q);
+    const on = () => setM(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [q]);
+  return m;
+}
+
+export const SHORTCUTS = [
+  {
+    heading: "Triage",
+    items: [
+      { keys: ["J"], label: "Next job" },
+      { keys: ["K"], label: "Previous job" },
+      { keys: ["S"], label: "Shortlist" },
+      { keys: ["X"], label: "Skip" },
+      { keys: ["A"], label: "Archive" },
+      { keys: ["O"], label: "Open posting" },
+      { keys: ["U"], label: "Undo last action" },
+    ],
+  },
+  {
+    heading: "Views",
+    items: [
+      { keys: ["1"], label: "All matches" },
+      { keys: ["2"], label: "Strong only" },
+      { keys: ["3"], label: "Maybe only" },
+      { keys: ["T"], label: "Tune ranking" },
+      { keys: ["D"], label: "Toggle density" },
+    ],
+  },
+  {
+    heading: "Anywhere",
+    items: [
+      { keys: ["⌘", "K"], label: "Search and commands" },
+      { keys: ["?"], label: "This list" },
+      { keys: ["Esc"], label: "Close panel or dialog" },
+    ],
+  },
+];
+
+export function App() {
+  const path = usePath();
+  const [state, dispatch] = React.useReducer(reducer, initialState);
+  const logoOverrides = useLogoOverrides();
+  const pickerCompany = useLogoPicker();
+  const missingLogos = React.useMemo(
+    () => logosMissing(companyLogoRows(state.jobs, state.weights, state.thresholds, logoOverrides)),
+    [state.jobs, state.weights, state.thresholds, logoOverrides],
+  );
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
+  const [mobileNav, setMobileNav] = React.useState(false);
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  const collapsed = useMediaQuery("(max-width: 1279px)");
+
+  // Global shortcuts that work on every view.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+        return;
+      }
+      if (!typing && e.key === "?" && !paletteOpen) {
+        e.preventDefault();
+        setShortcutsOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paletteOpen]);
+
+  const runScout = React.useCallback(() => {
+    if (state.scout) return;
+    const total = STATS.boards;
+    let done = 0;
+    let found = 0;
+    dispatch({ type: "scout", progress: { done, total, found } });
+    const id = window.setInterval(() => {
+      done = Math.min(total, done + 9 + Math.round(Math.random() * 6));
+      if (Math.random() < 0.28) found += 1;
+      dispatch({ type: "scout", progress: { done, total, found } });
+      if (done >= total) {
+        window.clearInterval(id);
+        dispatch({ type: "scoutDone", found });
+        toast("Scout finished", {
+          description: `${total} boards checked, ${found} new jobs, no errors`,
+          icon: <Radar className="text-strong" />,
+        });
+      }
+    }, 110);
+  }, [state.scout]);
+
+  // Sidebar counts
+  const counts = React.useMemo(() => {
+    let strong = 0;
+    let maybe = 0;
+    let fresh = 0;
+    let shortlist = 0;
+    for (const j of state.jobs) {
+      if (!inWhere(j, state.where)) continue;
+      if (j.state === "shortlisted") shortlist++;
+      if (j.state !== "new") continue;
+      if (j.ageHours < 24) fresh++;
+      if (!j.dims) continue;
+      const b = bandFor(rank(j.dims, state.weights), state.thresholds);
+      if (b === "strong") strong++;
+      else if (b === "maybe") maybe++;
+    }
+    const inProgress = state.apps.filter((a) => a.status === "prepped").length;
+    const submitted = state.apps.filter((a) => a.status === "submitted").length;
+    return { matches: strong + maybe, fresh, shortlist, inProgress, submitted };
+  }, [state.jobs, state.weights, state.thresholds, state.apps, state.where]);
+
+  const activeHref = path.startsWith("/applications")
+    ? path === "/applications"
+      ? "/applications"
+      : "/applications"
+    : path;
+
+  const sections: NavSection[] = [
+    {
+      label: "Triage",
+      items: [
+        { href: "/", label: "Top matches", icon: Sparkles, count: formatCount(counts.matches), countTone: "brand" },
+        { href: "/new", label: "New today", icon: Inbox, count: formatCount(counts.fresh) },
+        { href: "/shortlist", label: "Shortlist", icon: Bookmark, count: counts.shortlist || undefined },
+        { href: "/unscored", label: "Unscored", icon: CircleDashed, count: formatCompact(state.unscoredCount) },
+      ],
+    },
+    {
+      label: "Applications",
+      items: [
+        { href: "/applications", label: "In progress", icon: FileText, count: counts.inProgress },
+        { href: "/applications/submitted", label: "Submitted", icon: Send, count: counts.submitted },
+        { href: "/applications/follow-ups", label: "Follow-ups", icon: BellRing, count: 0 },
+      ],
+    },
+    {
+      label: "Setup",
+      items: [{ href: "/companies", label: "Company logos", icon: Images, count: missingLogos }],
+    },
+  ];
+
+  const sidebarFooter = (c: boolean) => (
+    <div className="space-y-2">
+      <ScoutCard
+        collapsed={c}
+        lastRunLabel={state.lastRun}
+        boards={STATS.boards}
+        newLastRun={state.newLastRun}
+        progress={state.scout}
+        onRun={runScout}
+        status={SCOUT_STATE.status}
+        notices={SCOUT_STATE.notices}
+      />
+      {c ? null : (
+        <div className="flex items-center justify-between px-1 text-2xs text-fg-4">
+          <span className="tnum">{formatCount(state.apiCalls)} model calls this month</span>
+          <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-fg-3 ring-1 ring-line">Prototype</span>
+        </div>
+      )}
+    </div>
+  );
+
+  const paletteGroups: PaletteGroup[] = React.useMemo(() => {
+    const jobs = state.jobs
+      .filter((j) => j.dims && j.state === "new")
+      .map((j) => ({ j, score: rank(j.dims!, state.weights) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 40);
+    return [
+      {
+        heading: "Jobs",
+        items: jobs.map(({ j, score }) => ({
+          id: `job-${j.id}`,
+          label: j.title,
+          keywords: [j.company, j.location],
+          hint: `${j.company} · ${score}`,
+          icon: <CompanyLogo name={j.company} src={demoLogoUrl(j.company)} size={20} />,
+          onSelect: () => {
+            navigate("/");
+            if (!inWhere(j, state.where)) dispatch({ type: "where", where: [] });
+            dispatch({ type: "segment", segment: bandFor(score, state.thresholds) === "no" ? "weak" : "matches" });
+            dispatch({ type: "select", view: "top", id: j.id });
+            dispatch({ type: "mobileDetail", open: true });
+          },
+        })),
+      },
+      {
+        heading: "Go to",
+        items: [
+          { id: "go-top", label: "Top matches", icon: <Sparkles className="size-4 text-fg-3" />, onSelect: () => navigate("/") },
+          { id: "go-new", label: "New today", icon: <Inbox className="size-4 text-fg-3" />, onSelect: () => navigate("/new") },
+          { id: "go-short", label: "Shortlist", icon: <Bookmark className="size-4 text-fg-3" />, onSelect: () => navigate("/shortlist") },
+          { id: "go-unscored", label: "Unscored", icon: <CircleDashed className="size-4 text-fg-3" />, onSelect: () => navigate("/unscored") },
+          { id: "go-apps", label: "Applications", icon: <FileText className="size-4 text-fg-3" />, onSelect: () => navigate("/applications") },
+        ],
+      },
+      {
+        heading: "Actions",
+        items: [
+          { id: "act-scout", label: "Run scout now", icon: <Radar className="size-4 text-fg-3" />, onSelect: runScout },
+          {
+            id: "act-tune",
+            label: "Tune ranking weights",
+            icon: <SlidersHorizontal className="size-4 text-fg-3" />,
+            shortcut: ["T"],
+            onSelect: () => {
+              navigate("/");
+              dispatch({ type: "tune", open: true });
+            },
+          },
+          {
+            id: "act-density",
+            label: state.density === "compact" ? "Use comfortable rows" : "Use compact rows",
+            icon: <Rows3 className="size-4 text-fg-3" />,
+            shortcut: ["D"],
+            onSelect: () => dispatch({ type: "density", density: state.density === "compact" ? "comfortable" : "compact" }),
+          },
+          {
+            id: "act-keys",
+            label: "Keyboard shortcuts",
+            icon: <Keyboard className="size-4 text-fg-3" />,
+            shortcut: ["?"],
+            onSelect: () => setShortcutsOpen(true),
+          },
+        ],
+      },
+    ];
+  }, [state.jobs, state.weights, state.thresholds, state.density, state.where, runScout]);
+
+  let view: React.ReactNode;
+  if (path === "/") view = <TriageView key="top" view="top" />;
+  else if (path === "/new") view = <TriageView key="new" view="new" />;
+  else if (path === "/shortlist") view = <TriageView key="shortlist" view="shortlist" />;
+  else if (path === "/unscored") view = <TriageView key="unscored" view="unscored" />;
+  else if (path === "/applications") view = <ApplicationsView filter="in-progress" />;
+  else if (path === "/applications/submitted") view = <ApplicationsView filter="submitted" />;
+  else if (path === "/applications/follow-ups") view = <ApplicationsView filter="follow-ups" />;
+  else if (path.startsWith("/applications/")) view = <WorkspaceView appId={path.split("/")[2] ?? ""} />;
+  else if (path === "/companies") view = <CompanyLogosView />;
+  else view = <TriageView view="top" />;
+
+  const activeNav =
+    path === "/applications/submitted" || path === "/applications/follow-ups"
+      ? path
+      : path.startsWith("/applications")
+        ? "/applications"
+        : activeHref;
+
+  return (
+    <Ctx.Provider
+      value={{
+        state,
+        dispatch,
+        isMobile,
+        openPalette: () => setPaletteOpen(true),
+        openMobileNav: () => setMobileNav(true),
+        runScout,
+      }}
+    >
+      <TooltipProvider>
+        <div className="flex h-full overflow-hidden bg-canvas text-fg">
+          {isMobile ? null : (
+            <AppSidebar
+              sections={sections}
+              activeHref={activeNav}
+              collapsed={collapsed}
+              onSearch={() => setPaletteOpen(true)}
+              footer={sidebarFooter(collapsed)}
+              user={{ name: "Kris Tester", initials: "KT" }}
+            />
+          )}
+          <main
+            className={
+              isMobile
+                ? "relative flex min-w-0 flex-1 flex-col overflow-hidden bg-panel"
+                : "relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-card"
+            }
+          >
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -top-48 left-[20%] h-96 w-[720px] max-w-full rounded-full opacity-70 blur-3xl"
+              style={{
+                background:
+                  "radial-gradient(closest-side, color-mix(in oklab, var(--color-brand) 16%, transparent), transparent)",
+              }}
+            />
+            <div className="relative flex min-h-0 flex-1 flex-col">{view}</div>
+          </main>
+        </div>
+
+        <Dialog open={mobileNav} onOpenChange={setMobileNav}>
+          <DialogContent
+            className="left-0 top-0 h-full w-[280px] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] max-w-none translate-x-0 rounded-none rounded-r-xl border-y-0 border-l-0 p-0 data-[state=open]:animate-drawer-in"
+            overlayClassName="bg-black/60"
+          >
+            <DialogTitle className="sr-only">Navigation</DialogTitle>
+            <DialogDescription className="sr-only">Views and applications</DialogDescription>
+            <div onClick={(e) => (e.target as HTMLElement).closest("a") && setMobileNav(false)} className="h-full">
+              <AppSidebar
+                sections={sections}
+                activeHref={activeNav}
+                onSearch={() => {
+                  setMobileNav(false);
+                  setPaletteOpen(true);
+                }}
+                footer={sidebarFooter(false)}
+                user={{ name: "Kris Tester", initials: "KT" }}
+                className="w-full"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} groups={paletteGroups} />
+        <LogoPickerDialog company={pickerCompany} />
+        <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} groups={SHORTCUTS} />
+        <AppToaster />
+      </TooltipProvider>
+    </Ctx.Provider>
+  );
+}

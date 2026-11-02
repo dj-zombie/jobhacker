@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply — Acme (Greenhouse, react-select shape)</title>
+  </head>
+  <body>
+    <!--
+      Hand-written stand-in for job-boards.greenhouse.io markup seen 2026-10-22:
+      the resume's <label for> says "Attach" (the id is "resume"), Yes/No questions
+      are role=combobox inputs rather than <select>, and a hidden required mirror
+      input sits beside the real controls. The EEO block stays untouched.
+    -->
+    <main>
+      <form id="application_form" action="/do-not-submit" method="post">
+        <div class="field">
+          <label for="first_name">First Name*</label>
+          <input type="text" id="first_name" required />
+        </div>
+        <div class="file-upload" aria-required="true">
+          <div class="upload-label">Resume/CV*</div>
+          <label class="visually-hidden" for="resume">Attach</label>
+          <input type="file" id="resume" />
+        </div>
+        <div class="file-upload">
+          <label class="visually-hidden" for="cover_letter">Attach</label>
+          <input type="file" id="cover_letter" />
+        </div>
+        <div class="field" aria-required="true">
+          <label for="transcript">Attach</label>
+          <input type="file" id="transcript" />
+        </div>
+        <div class="field">
+          <label id="candidate-location-label">Location (City)*</label>
+          <input
+            id="candidate-location"
+            type="text"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-labelledby="candidate-location-label"
+            aria-required="true"
+            required
+          />
+        </div>
+        <div class="field">
+          <label id="auth-label">Are you legally authorized to work in the United States?*</label>
+          <input
+            id="auth"
+            type="text"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-labelledby="auth-label"
+            aria-required="true"
+            required
+          />
+        </div>
+        <div class="field">
+          <label for="hear">How did you hear about this job?</label>
+          <input type="text" id="hear" />
+        </div>
+        <div class="field">
+          <label for="relocate">Are you currently based in or willing to relocate to the Bay Area?</label>
+          <input type="text" id="relocate" required />
+        </div>
+        <input
+          id="mirror"
+          required
+          aria-hidden="true"
+          tabindex="-1"
+          style="position: absolute; width: 4px; height: 4px"
+        />
+
+        <section class="eeo-section">
+          <h3>Voluntary Self Identification</h3>
+          <div class="field">
+            <label for="gender">Gender</label>
+            <select id="gender">
+              <option value="">Select</option>
+              <option value="decline">Decline</option>
+            </select>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button type="submit" id="submit_app">Submit Application</button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>

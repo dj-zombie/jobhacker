@@ -1,0 +1,53 @@
+[
+  {
+    "id": "f0719b22082e",
+    "friendly_id": "f0719b22082e-assistant-director-of-care-london-ontario",
+    "name": "Assistant Director of Care: London, Ontario",
+    "url": "https://rhynocare.breezy.hr/p/f0719b22082e-assistant-director-of-care-london-ontario",
+    "published_date": "2026-10-14T13:40:42.451Z",
+    "type": {
+      "id": "fullTime",
+      "name": "Full-Time"
+    },
+    "location": {
+      "country": {
+        "name": "Canada",
+        "id": "CA"
+      },
+      "state": {
+        "id": "ON",
+        "name": "Ontario"
+      },
+      "city": "London",
+      "primary": true,
+      "is_remote": false,
+      "name": "London, ON",
+      "id": "d0dc5445a952"
+    },
+    "department": null,
+    "salary": "$72.50 / hour",
+    "company": {
+      "name": "RhynoCare",
+      "logo_url": null,
+      "friendly_id": "rhynocare",
+      "isMultipleLocationsEnabled": true
+    },
+    "locations": [
+      {
+        "country": {
+          "name": "Canada",
+          "id": "CA"
+        },
+        "state": {
+          "id": "ON",
+          "name": "Ontario"
+        },
+        "city": "London",
+        "primary": true,
+        "is_remote": false,
+        "name": "London, ON",
+        "id": "d0dc5445a952"
+      }
+    ]
+  }
+]

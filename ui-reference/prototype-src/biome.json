@@ -1,0 +1,22 @@
+{
+  "files": {
+    "includes": [
+      "src/kit/**",
+      "src/core-ports/**"
+    ]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  }
+}

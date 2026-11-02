@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd template for the unattended daily scout (FR-10).
+
+  Setup (see README "Scheduling"):
+    1. Copy this file to ~/Library/LaunchAgents/space.jobhacker.scout.plist.
+    2. In the copy, replace __REPO__ with the absolute path to your JobHacker
+       checkout and __PNPM__ with the output of `which pnpm`, and adjust the
+       Hour/Minute below to the time you want it to run.
+    3. Load it:
+         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/space.jobhacker.scout.plist
+       Run once now: launchctl kickstart gui/$(id -u)/space.jobhacker.scout
+       Remove it:    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/space.jobhacker.scout.plist
+
+  The job cd's into the repo and runs `pnpm cli scout`, which loads config/*.yaml
+  and .env (so ANTHROPIC_API_KEY in .env is used), writes a daily log to
+  data/logs/jobhacker-YYYY-MM-DD.log (rotated to 14 days), and exits non-zero on
+  failure.
+
+  launchd does not source .zshrc, so an nvm/fnm Node is not on PATH. pnpm's
+  shebang is `#!/usr/bin/env node`, which fails with "env: node: No such file"
+  unless the directory that contains that pnpm (and its node) is prepended.
+  launchd also refuses to start if StandardOutPath's directory is missing, and
+  it will not create parent directories — so the shell creates data/logs and
+  only then redirects stdout/stderr there.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>space.jobhacker.scout</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/zsh</string>
+      <string>-lc</string>
+      <string>mkdir -p "__REPO__/data/logs" &amp;&amp; cd "__REPO__" &amp;&amp; export PATH="$(dirname "__PNPM__"):$PATH" &amp;&amp; "__PNPM__" cli scout >> "__REPO__/data/logs/launchd.out.log" 2>> "__REPO__/data/logs/launchd.err.log"</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+
+    <!-- Run every day at 07:30 local time. Edit Hour/Minute to taste. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key>
+      <integer>7</integer>
+      <key>Minute</key>
+      <integer>30</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+  </dict>
+</plist>

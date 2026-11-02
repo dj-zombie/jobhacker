@@ -1,0 +1,15 @@
+# Copy to companies.yaml (gitignored). Easiest way to add: `pnpm cli companies:add <careers-page-url>`
+# which detects the ATS and token and verifies the board responds.
+# token = the slug in the board URL, e.g. boards.greenhouse.io/<token>, jobs.lever.co/<token>, jobs.ashbyhq.com/<token>
+
+companies:
+  - name: Example Studio
+    ats: greenhouse        # greenhouse | lever | ashby
+    token: examplestudio
+    active: true
+    tags: [games]
+  - name: Example Audio Co
+    ats: lever
+    token: exampleaudio
+    active: false
+    tags: [audio]

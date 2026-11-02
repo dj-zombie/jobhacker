@@ -1,0 +1,8 @@
+---
+description: JobHacker project rules, always applied
+alwaysApply: true
+---
+- Before any work, read `AGENTS.md`, then the sections of `docs/ARCHITECTURE.md` and `docs/reference/` your change touches.
+- AGENTS.md has eight invariants, all non-negotiable for agents. Among them: never submit an application, no bot-evasion or scraping, never invent facts about the user, self-identification only from `profile.yaml`, no job silently dropped.
+- `src/core` holds all logic and never imports from `src/app` or `src/cli`. Kit components in `src/components/jobhacker/` take props and never fetch.
+- Verify by running, not by reading. `pnpm check` must be green.

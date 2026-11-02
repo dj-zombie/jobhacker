@@ -1,0 +1,16 @@
+[
+  {
+    "name": "{name}",
+    "domain": "https://{slug}.com",
+    "brandId": "bf-{slug}",
+    "icon": "https://cdn.brandfetch.io/domain/{slug}.com/w/128/h/128/fallback/404/type/icon?c=stand-in",
+    "claimed": true,
+    "verified": true
+  },
+  {
+    "name": "{name} Labs",
+    "domain": "https://{slug}labs.com",
+    "brandId": "bf-{slug}-labs",
+    "icon": "https://cdn.brandfetch.io/domain/{slug}labs.com/w/128/h/128/fallback/404/type/icon?c=stand-in"
+  }
+]

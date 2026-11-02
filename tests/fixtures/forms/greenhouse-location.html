@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply — Acme (Greenhouse location typeahead)</title>
+  </head>
+  <body>
+    <!--
+      Stand-in for the job-boards.greenhouse.io "Location (City)" react-select,
+      as seen live on Discord's form (2026-10-23): typing runs the search, but
+      the menu is controlled by the page and stays closed (aria-expanded=false)
+      until the control is clicked; then the results render as .select__option.
+      Picking one shows it in .select__single-value and clears the typed text.
+    -->
+    <main>
+      <form id="application_form" action="/do-not-submit" method="post">
+        <div class="field">
+          <label for="first_name">First Name*</label>
+          <input type="text" id="first_name" required />
+        </div>
+        <div class="field">
+          <label id="candidate-location-label">Location (City)*</label>
+          <div class="select-shell">
+            <div class="select__control">
+              <div class="select__value-container">
+                <div class="select__single-value"></div>
+                <input
+                  id="candidate-location"
+                  type="text"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded="false"
+                  aria-labelledby="candidate-location-label"
+                  aria-required="true"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit" id="submit_app">Submit Application</button>
+        </div>
+      </form>
+    </main>
+    <script>
+      (function () {
+        var PLACES = [
+          'City of Scottsdale, Arizona, United States',
+          'Scottsdale, Tasmania, Australia',
+          'Scottsdale, Arizona, United States',
+          'Phoenix, Arizona, United States',
+        ];
+        var shell = document.querySelector('.select-shell');
+        var control = shell.querySelector('.select__control');
+        var input = document.getElementById('candidate-location');
+        var single = shell.querySelector('.select__single-value');
+        var loaded = [];
+        var open = false;
+
+        function render() {
+          var old = shell.querySelector('.select__menu');
+          if (old) old.remove();
+          input.setAttribute('aria-expanded', String(open));
+          if (!open || loaded.length === 0) return;
+          var menu = document.createElement('div');
+          menu.className = 'select__menu';
+          loaded.forEach(function (p) {
+            var o = document.createElement('div');
+            o.className = 'select__option';
+            o.setAttribute('role', 'option');
+            o.textContent = p;
+            o.addEventListener('click', function () {
+              single.textContent = p;
+              input.value = '';
+              open = false;
+              render();
+            });
+            menu.appendChild(o);
+          });
+          shell.appendChild(menu);
+        }
+
+        input.addEventListener('input', function () {
+          var q = input.value.trim().toLowerCase();
+          loaded = [];
+          render();
+          setTimeout(function () {
+            loaded = PLACES.filter(function (p) {
+              return q && p.toLowerCase().indexOf(q) !== -1;
+            });
+            render();
+          }, 200);
+        });
+        // Live: a bare mousedown does not open it; the page opens it on click.
+        control.addEventListener('click', function () {
+          open = true;
+          render();
+        });
+        document.addEventListener('mousedown', function (e) {
+          if (!shell.contains(e.target)) {
+            open = false;
+            render();
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

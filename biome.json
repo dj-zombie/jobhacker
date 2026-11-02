@@ -1,0 +1,77 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignore": [
+      "node_modules",
+      ".cursor",
+      ".next",
+      ".next-shoot",
+      "drizzle",
+      "data",
+      "output",
+      "coverage",
+      "ui-reference",
+      "docs/archive",
+      "*.example.yaml",
+      "*.css"
+    ]
+  },
+  "organizeImports": {
+    "enabled": true
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noExplicitAny": "error"
+      },
+      "style": {
+        "noNonNullAssertion": "off",
+        "useNodejsImportProtocol": "error"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "overrides": [
+    {
+      "include": [
+        "src/components/jobhacker/**",
+        "src/components/ui/**",
+        "src/lib/utils.ts",
+        "src/lib/format.ts"
+      ],
+      "formatter": {
+        "enabled": false
+      },
+      "organizeImports": {
+        "enabled": false
+      },
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noSvgWithoutTitle": "off",
+            "useSemanticElements": "off"
+          }
+        }
+      }
+    }
+  ]
+}

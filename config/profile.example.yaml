@@ -1,0 +1,75 @@
+# Copy to profile.yaml (gitignored). This is the ONLY source of truth for facts about you.
+# Agents may rephrase and select from it, never add to it. Bullet ids must be stable and unique.
+
+contact:
+  name: Your Name
+  email: you@example.com
+  phone: "+1 555 555 5555"
+  location: City, ST
+links:
+  linkedin: https://linkedin.com/in/you
+  github: https://github.com/you
+  portfolio: https://example.com
+
+summary: >
+  Senior full-stack engineer with N years across ... (write 2-3 sentences, all true)
+
+skills:            # also the allowlist for technologies grounding.ts will accept
+  languages: [TypeScript, JavaScript, Go]
+  frontend: [React, Next.js]
+  backend: [Node.js]
+  other: [Docker]
+
+experience:
+  - id: company-a
+    company: Company A
+    title: Senior Full-Stack Developer
+    start: 2024-01
+    end: present
+    location: Remote
+    bullets:
+      - id: company-a-1
+        text: "Built X using Y, which reduced Z by N%"   # only numbers you can stand behind
+        # profile:build adds machine-checkable local provenance; keep it when adopting the draft.
+        sources:
+          - { source: resume, file: input/resume.pdf, locator: "page:1:line:12" }
+      - id: company-a-2
+        text: "..."
+
+projects:
+  - id: project-a
+    name: Project A
+    url: https://example.com
+    bullets:
+      - id: project-a-1
+        text: "..."
+
+education: []
+
+standard_answers:            # used verbatim or lightly adapted for common form questions
+  work_authorization_us: "Yes"
+  require_sponsorship: "No"
+  willing_to_relocate: "[NEEDS INPUT]"      # e.g. "No", or "Yes, to <city>"
+  current_location: "City, ST"              # copy it from contact.location above, verbatim
+  earliest_start_date: "Two weeks from offer"
+  salary_expectation: "[NEEDS INPUT]"       # leave as NEEDS INPUT to be asked per application
+  how_did_you_hear: "Company careers page"
+
+# Voluntary self-identification. Filled verbatim onto forms; NEVER inferred (AGENTS invariant 7).
+# Every one of these is genuinely voluntary and declining does not disadvantage an application —
+# but a selection is usually required for the form to submit, which is why these are filled.
+# Replace a value with your real answer to disclose it; leave as decline to not disclose.
+self_identification:
+  gender: decline
+  race_ethnicity: decline
+  veteran_status: decline
+  disability_status: decline
+
+  # Optional. If a form's wording doesn't match the options above, the mapper picks the closest
+  # match to the value you set. Add exact strings here to force a specific option's text instead.
+  overrides: {}
+    # disability_status: "No, I do not have a disability and have not had one in the past"
+
+cover_note:
+  tone: "Direct, warm, specific. No clichés. Max 150 words."
+  always_mention: []        # e.g. a shipped product you want referenced when relevant

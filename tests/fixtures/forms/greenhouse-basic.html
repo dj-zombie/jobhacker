@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply — Acme (Greenhouse)</title>
+  </head>
+  <body>
+    <!--
+      Representative Greenhouse application form (hand-written fixture; see STATUS).
+      Core contact fields, a resume upload, one custom free-text question with no
+      matching prepared answer, and a Voluntary Self-Identification section that
+      must be left untouched (invariant 7).
+    -->
+    <main>
+      <h1>Apply to Acme — Senior Engineer</h1>
+      <form id="application_form" action="/do-not-submit" method="post">
+        <div class="field">
+          <label for="first_name">First Name *</label>
+          <input type="text" id="first_name" name="job_application[first_name]" required />
+        </div>
+        <div class="field">
+          <label for="last_name">Last Name *</label>
+          <input type="text" id="last_name" name="job_application[last_name]" required />
+        </div>
+        <div class="field">
+          <label for="email">Email *</label>
+          <input type="email" id="email" name="job_application[email]" required />
+        </div>
+        <div class="field">
+          <label for="phone">Phone</label>
+          <input type="tel" id="phone" name="job_application[phone]" />
+        </div>
+        <div class="field">
+          <label for="resume">Resume/CV *</label>
+          <input type="file" id="resume" name="job_application[resume]" required />
+        </div>
+        <div class="field">
+          <label for="why">Why do you want to work at Acme? *</label>
+          <textarea id="why" name="job_application[answers_attributes][0][text_value]" required></textarea>
+        </div>
+
+        <section class="eeo-section">
+          <h3>Voluntary Self-Identification</h3>
+          <div class="field">
+            <label for="gender">Gender</label>
+            <select id="gender" name="job_application[gender]">
+              <option value="">Please select</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="decline">Decline to self identify</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="race">Race / Ethnicity</label>
+            <select id="race" name="job_application[race]">
+              <option value="">Please select</option>
+              <option value="asian">Asian</option>
+              <option value="white">White</option>
+              <option value="decline">Decline to self identify</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="veteran">Veteran Status</label>
+            <select id="veteran" name="job_application[veteran_status]">
+              <option value="">Please select</option>
+              <option value="no">I am not a veteran</option>
+              <option value="yes">I am a veteran</option>
+            </select>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button type="submit" id="submit_app">Submit Application</button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>

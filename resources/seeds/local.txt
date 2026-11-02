@@ -1,0 +1,25 @@
+# J3 local seed (PLACES § 8.2): Portland- and Phoenix-area employers. Candidates, not
+# verified boards: boards:discover probes each name on every enabled keyless ATS.
+# Multi-word names also appear joined, because slugify makes "New Relic" new-relic.
+# Portland area
+Panthalassa
+Smarsh
+Fictiv
+New Relic
+NewRelic
+Vacasa
+Jama Software
+JamaSoftware
+Expensify
+Airship
+CrowdStreet
+Instrument
+Laika
+# Phoenix area
+SmartRent
+GoDaddy
+Carvana
+Axon
+Offerpad
+Nextiva
+WebPT

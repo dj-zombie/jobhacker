@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply — Acme (Greenhouse, react-select)</title>
+  </head>
+  <body>
+    <!--
+      Emulates Greenhouse's react-select custom dropdowns (Round 5b): the control
+      opens a menu of .select__option[role=option] on mousedown, choosing one sets
+      .select__single-value and a hidden input. A screener dropdown (work
+      authorization) must be driven to the mapped answer; the EEO/self-ID dropdown
+      (Gender), under a Voluntary Self-Identification heading, must be left alone.
+    -->
+    <main>
+      <h1>Apply to Acme — Staff Engineer</h1>
+      <form id="application_form" action="/do-not-submit" method="post">
+        <div class="field">
+          <label class="select__label" for="auth"
+            >Are you legally authorized to work in the United States? *</label
+          >
+          <div class="select__container" data-name="auth">
+            <input type="hidden" name="auth" />
+            <div class="select__control">
+              <div class="select__value-container">
+                <div class="select__placeholder">Select...</div>
+              </div>
+              <input id="auth" role="combobox" class="select__input" aria-required="true" />
+            </div>
+          </div>
+        </div>
+
+        <section class="eeo-section">
+          <h3>Voluntary Self-Identification</h3>
+          <div class="field">
+            <label class="select__label" for="gender">Gender *</label>
+            <div class="select__container" data-name="gender">
+              <input type="hidden" name="gender" />
+              <div class="select__control">
+                <div class="select__value-container">
+                  <div class="select__placeholder">Select...</div>
+                </div>
+                <input id="gender" role="combobox" class="select__input" aria-required="true" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button type="submit" id="submit_app">Submit Application</button>
+        </div>
+      </form>
+    </main>
+    <script>
+      // Minimal react-select emulation driven by the same synthetic mouse events
+      // SafePage dispatches (mousedown to open / choose).
+      (function () {
+        var OPTIONS = {
+          auth: ['Yes', 'No'],
+          gender: ['Male', 'Female', 'Non-binary', 'Decline to self identify'],
+        };
+        document.addEventListener('mousedown', function (e) {
+          var option = e.target.closest ? e.target.closest('.select__option') : null;
+          if (option) {
+            var contO = option.closest('.select__container');
+            var vc = contO.querySelector('.select__value-container');
+            vc.innerHTML = '<div class="select__single-value"></div>';
+            vc.firstChild.textContent = option.textContent;
+            contO.querySelector('input[type=hidden]').value = option.textContent;
+            var m = contO.querySelector('.select__menu');
+            if (m) m.remove();
+            return;
+          }
+          var control = e.target.closest ? e.target.closest('.select__control') : null;
+          if (control) {
+            var cont = control.closest('.select__container');
+            if (cont.querySelector('.select__menu')) return;
+            var menu = document.createElement('div');
+            menu.className = 'select__menu';
+            (OPTIONS[cont.getAttribute('data-name')] || []).forEach(function (t) {
+              var o = document.createElement('div');
+              o.className = 'select__option';
+              o.setAttribute('role', 'option');
+              o.textContent = t;
+              menu.appendChild(o);
+            });
+            cont.appendChild(menu);
+            return;
+          }
+          // click elsewhere closes open menus
+          var open = document.querySelectorAll('.select__menu');
+          for (var i = 0; i < open.length; i++) open[i].remove();
+        });
+      })();
+    </script>
+  </body>
+</html>

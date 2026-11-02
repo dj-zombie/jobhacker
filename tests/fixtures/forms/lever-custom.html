@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply — Globex (Lever, custom cards)</title>
+  </head>
+  <body>
+    <!--
+      Representative Lever form with "Additional information" custom cards: one
+      that matches a prepared answer (willing to relocate) and one whose answer is
+      a NEEDS INPUT placeholder (salary expectation) and so must be left unfilled.
+      Plus the untouched EEO section.
+    -->
+    <main>
+      <h2>Globex — Senior Frontend Engineer</h2>
+      <form id="application-form" action="/do-not-submit" method="post">
+        <div class="application-field">
+          <label for="name">Full name✱</label>
+          <input type="text" id="name" name="name" required />
+        </div>
+        <div class="application-field">
+          <label for="email">Email✱</label>
+          <input type="email" id="email" name="email" required />
+        </div>
+        <div class="application-field">
+          <label for="phone">Phone</label>
+          <input type="tel" id="phone" name="phone" />
+        </div>
+        <div class="application-field">
+          <label for="resume">Resume/CV✱</label>
+          <input type="file" id="resume" name="resume" required />
+        </div>
+
+        <div class="application-additional">
+          <div class="application-field">
+            <label for="relocate">Are you willing to relocate?✱</label>
+            <select id="relocate" name="cards[relocate][relocate]" required>
+              <option value="">Select...</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+          <div class="application-field">
+            <label for="salary">What are your salary expectations?✱</label>
+            <input type="text" id="salary" name="cards[comp][salary]" required />
+          </div>
+        </div>
+
+        <section class="eeoDisclosure">
+          <h4>EEO — Voluntary Self-Identification</h4>
+          <div class="application-field">
+            <label for="gender">Gender</label>
+            <select id="gender" name="eeo[gender]">
+              <option value="">Select...</option>
+              <option value="man">Man</option>
+              <option value="woman">Woman</option>
+            </select>
+          </div>
+          <div class="application-field">
+            <label for="veteran">Veteran status</label>
+            <select id="veteran" name="eeo[veteran]">
+              <option value="">Select...</option>
+              <option value="yes">I am a protected veteran</option>
+              <option value="no">I am not a protected veteran</option>
+            </select>
+          </div>
+        </section>
+
+        <div class="section-submit">
+          <button type="submit" id="btn-submit">Submit application</button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>

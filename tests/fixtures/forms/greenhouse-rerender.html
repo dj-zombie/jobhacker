@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply — Acme (Greenhouse, re-render)</title>
+  </head>
+  <body>
+    <!--
+      Reproduces the live-Greenhouse hydration race (STATUS Round 5 verify): a
+      React-controlled input re-renders just after it is filled and wipes the
+      typed value the first time. fillForm must notice the value did not stick
+      and refill it, and the report must reflect the true final state.
+    -->
+    <main>
+      <h1>Apply to Acme — Staff Engineer</h1>
+      <form id="application_form" action="/do-not-submit" method="post">
+        <div class="field">
+          <label for="first_name">First Name *</label>
+          <input type="text" id="first_name" name="job_application[first_name]" required />
+        </div>
+        <div class="field">
+          <label for="last_name">Last Name *</label>
+          <input type="text" id="last_name" name="job_application[last_name]" required />
+        </div>
+        <div class="field">
+          <label for="email">Email *</label>
+          <input type="email" id="email" name="job_application[email]" required />
+        </div>
+        <div class="field">
+          <label for="phone">Phone</label>
+          <input type="tel" id="phone" name="job_application[phone]" />
+        </div>
+        <div class="field">
+          <label for="resume">Resume/CV *</label>
+          <input type="file" id="resume" name="job_application[resume]" required />
+        </div>
+        <div class="actions">
+          <button type="submit" id="submit_app">Submit Application</button>
+        </div>
+      </form>
+    </main>
+    <script>
+      // Simulate a controlled component that rejects the first programmatic
+      // change (as if React re-rendered from its own empty state), then accepts
+      // subsequent values. This wipes the value during the fill's own `input`
+      // event, so the immediate read-back is empty and only a refill recovers it.
+      (function () {
+        var el = document.getElementById('first_name');
+        var wiped = false;
+        el.addEventListener('input', function () {
+          if (!wiped && el.value) {
+            wiped = true;
+            el.value = '';
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
