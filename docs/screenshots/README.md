@@ -1,17 +1,59 @@
 # Screenshots
 
-The triage view is at the top of the README, because that is the picture GitHub shows on the repository home. This page holds the rest, so the README can stay a setup guide.
+The running app, with sample data: public companies and the fictional candidate in `config/profile.example.yaml`. The places in the filter are the example criteria. Marks in these frames are monograms. In ordinary use the browser loads the logo once a domain is known.
 
-A wiki would split the pictures from the commit that produced them. `docs/testing/screenshots/` is the other place screenshots already go, and it is gitignored on purpose: those frames are taken against the live database and can show a real search. Nothing in this folder should. When these need retaking, run the app against a throwaway database and the example config, and read every frame before replacing it.
+The triage view is also at the top of the README. Frames taken against a live database stay out of git.
 
-These pictures are the running app. The companies are public, the candidate is the fictional one in `config/profile.example.yaml`, and the places in the filter are the example criteria. The marks are the monogram the app draws when a logo image has not loaded. In ordinary use the browser loads the logo from Brandfetch once a domain is known.
+## Triage
+
+A ranked queue beside the selected job. The score and the reasons sit on the right. J and K move through the list, S shortlists, X skips.
+
+![A ranked queue beside the selected job, with its score and the reasons](triage.png)
+
+## Where
+
+Portland, Phoenix, and Remote are a view filter. This frame is Remote only, so the queue drops from 12 jobs to 10. The others stay stored.
+
+![The queue filtered to Remote](where.png)
 
 ## Tune the ranking
 
-Moving a weight re-ranks the queue on this machine. It does not call the model.
+Drag a weight and the list re-ranks on this machine. No model call. Save writes the weights into `criteria.yaml`.
 
-![Weight sliders and the score distribution beside the same queue](tune.png)
+![Weight sliders and the score distribution beside the queue](tune.png)
+
+## Shortlist
+
+Jobs you kept. Prepare application writes the materials for the selected one.
+
+![The shortlist, with Prepare application on the selected job](shortlist.png)
+
+## Still unscored
+
+Jobs the model has not reached. Prescore only decides which of them gets scored next. The four gates are the only things that remove a job, and this run removed none.
+
+![Unscored jobs, with Score next batch](unscored.png)
+
+## Applications
+
+Prepped, submitted, interviewing, offer. A form that still needs a look shows it on the row.
+
+![The application pipeline, four in progress](applications.png)
+
+## Fill report
+
+Open & fill writes the form in your Chrome and lists every field. A drafted answer waits here for a look. Mark submitted records that you sent it.
+
+![The fill report for one application, with one drafted answer to check](workspace.png)
+
+## Keyboard
+
+`?` opens the shortcuts.
+
+![The keyboard shortcuts dialog](shortcuts.png)
 
 ## On a phone
 
-![The same queue at phone width](phone.png)
+The same queue. The sidebar is behind the menu.
+
+![The queue at phone width](phone.png)
