@@ -3,7 +3,7 @@ import { ANYWHERE, type Criteria, REMOTE_AREA } from '../config/schemas.js';
 import type { Db } from '../db/client.js';
 import { areasRepo } from '../db/repo/areas.js';
 import { jobAreas, jobs } from '../db/schema.js';
-import type { SearchPlace } from '../sources/query-gen.js';
+import { type SearchPlace, placeCities, placeRegions } from '../sources/query-gen.js';
 import type { RemoteType } from '../sources/types.js';
 import { type Classification, type PlacesConfig, classifyPlaces } from './places.js';
 
@@ -85,6 +85,8 @@ export function searchPlaces(criteria: PlacesCriteria): SearchPlace[] {
   return places.map((place) => ({
     area: place.id,
     location: [place.cities[0], place.states[0]].filter(Boolean).join(', '),
+    cities: placeCities(place),
+    regions: placeRegions(place),
   }));
 }
 

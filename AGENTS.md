@@ -1,6 +1,6 @@
 # AGENTS.md — JobHacker
 
-JobHacker is a personal job-search tool. It runs on your Mac. It pulls postings from hundreds of company job boards and a licensed search API, ranks them against what you want, prepares tailored application materials grounded in your real history, and fills application forms in your own Chrome. **You** review each form and click submit.
+JobHacker is a personal job-search tool. It runs on your own computer: macOS, Windows or Linux. It pulls postings from hundreds of company job boards and a licensed search API, ranks them against what you want, prepares tailored application materials grounded in your real history, and fills application forms in your own Chrome. **You** review each form and click submit.
 
 What it's for, in numbers: about 10 minutes a day to triage new jobs, and under 5 minutes per application from shortlist to submitted. Every change should move the tool toward those numbers, or at least keep it there.
 

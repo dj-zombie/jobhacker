@@ -20,6 +20,65 @@ export const LOGO_WORDMARK_H_PX = 72;
 
 const SIZES = new Set([LOGO_TILE_PX, LOGO_HEADER_PX]);
 
+/**
+ * Brandfetch's `theme` is the color of the logo, not the background it sits on.
+ * `light` is the light-colored logo. `dark` is the dark-colored one.
+ * The header copy of these functions is `components/jobhacker/logo-contrast.ts`.
+ * A test fails when the two disagree. The kit cannot import this file: the
+ * prototype's `@/` is its own kit, and the two kit trees have to match.
+ */
+export type LogoTheme = 'light' | 'dark';
+
+/** How much of the wordmark's backdrop is the panel. The left edge of `hero-scrim`. */
+export const WORDMARK_SCRIM = 0.8;
+
+/** sRGB channel, 0–1, to linear light. */
+export function linearChannel(srgb: number): number {
+  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+
+/** Relative luminance, 0–1, from sRGB channels that are themselves 0–1. */
+export function relativeLuminance(red: number, green: number, blue: number): number {
+  return 0.2126 * linearChannel(red) + 0.7152 * linearChannel(green) + 0.0722 * linearChannel(blue);
+}
+
+/** `#0c0e13`, `--color-panel`, the color the wordmark's scrim mixes toward. */
+const PANEL_LUMINANCE = relativeLuminance(0x0c / 255, 0x0e / 255, 0x13 / 255);
+
+function clamp01(value: number): number {
+  if (Number.isNaN(value)) return 0;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function contrastRatio(foreground: number, background: number): number {
+  const lighter = Math.max(foreground, background);
+  const darker = Math.min(foreground, background);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * The Brandfetch theme whose logo contrasts with a backdrop of this relative
+ * luminance. A white logo wins below about 0.18, where it beats a black one.
+ */
+export function contrastingLogoTheme(backdropLuminance: number): LogoTheme {
+  const backdrop = clamp01(backdropLuminance);
+  const light = contrastRatio(1, backdrop);
+  const dark = contrastRatio(0, backdrop);
+  return light >= dark ? 'light' : 'dark';
+}
+
+/**
+ * The wordmark sits on the left of the art, under a scrim that is mostly the
+ * panel. Its backdrop is that mix, so a light wordmark is used unless the art
+ * itself is near white.
+ */
+export function wordmarkBackdropLuminance(artLuminance: number): number {
+  const art = clamp01(artLuminance);
+  return WORDMARK_SCRIM * PANEL_LUMINANCE + (1 - WORDMARK_SCRIM) * art;
+}
+
 /** A lowercase hostname: labels, dots, no scheme, port, path or uppercase. */
 const HOSTNAME =
   /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
@@ -39,14 +98,16 @@ export function logoUrl(input: {
 }
 
 /**
- * The header's other two assets (J11, D112, D113): the `symbol`, the glyph with no
- * tile, and the wordmark (`logo`) in its variant for dark backgrounds. A brand with no
- * dark wordmark answers `404`, and the header shows the company's name instead.
+ * The header's other two assets (J11, D112, D147): the `symbol`, the glyph with no
+ * tile, and the wordmark (`logo`). `theme` is the color of that asset. A brand
+ * with no asset in the chosen theme answers `404`, and the header shows the
+ * company's name, or the icon in place of the symbol.
  */
 export function brandAssetUrl(input: {
   domain: string | null | undefined;
   clientId: string | null | undefined;
   type: 'symbol' | 'wordmark';
+  theme: LogoTheme;
 }): string | null {
   const domain = input.domain ?? '';
   const clientId = input.clientId ?? '';
@@ -55,8 +116,8 @@ export function brandAssetUrl(input: {
   const id = encodeURIComponent(clientId);
   const path =
     input.type === 'symbol'
-      ? `w/${LOGO_SYMBOL_PX}/h/${LOGO_SYMBOL_PX}/fallback/404/type/symbol`
-      : `h/${LOGO_WORDMARK_H_PX}/theme/dark/fallback/404/type/logo`;
+      ? `w/${LOGO_SYMBOL_PX}/h/${LOGO_SYMBOL_PX}/theme/${input.theme}/fallback/404/type/symbol`
+      : `h/${LOGO_WORDMARK_H_PX}/theme/${input.theme}/fallback/404/type/logo`;
   return `https://cdn.brandfetch.io/domain/${domain}/${path}?c=${id}`;
 }
 

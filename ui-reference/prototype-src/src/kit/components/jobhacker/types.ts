@@ -34,6 +34,8 @@ export interface JobSummary {
   /** 0–1 lexical prescore. Ordering only, never excludes. */
   prescore?: number | null;
   state: TriageState;
+  /** The posting is closed. Shortlist still shows the row, with a Closed chip. */
+  closed?: boolean;
   /** One of the user's named places (Portland, Phoenix…) when the job is in it. Remote is `remote`. */
   place?: { id: string; label: string } | null;
 }
@@ -61,17 +63,23 @@ export interface JobDetailData extends JobSummary {
    */
   logoTileUrl?: string | null;
   /**
-   * Brandfetch `type=symbol`: the glyph with no tile behind it, drawn large on the
-   * header's art. Absent falls back to the cover's icon.
+   * Brandfetch `type=symbol` in `theme=light`: the light glyph, drawn large when the
+   * art is dark. Absent falls back to the cover's icon.
    */
-  logoSymbolUrl?: string | null;
+  logoSymbolOnDarkUrl?: string | null;
+  /** Brandfetch `type=symbol` in `theme=dark`: the dark glyph, drawn when the art is light. */
+  logoSymbolOnLightUrl?: string | null;
   /**
-   * Brandfetch `type=logo&theme=dark`: the wordmark made for dark backgrounds, shown
-   * as served above the title. Absent, or a load that fails, shows the name as text.
+   * Brandfetch `type=logo` in `theme=light`: the light wordmark, for the dark scrim
+   * under the title. Shown as served. Absent, or a load that fails, shows the name.
    */
-  logoWordmarkUrl?: string | null;
+  logoWordmarkOnDarkUrl?: string | null;
+  /** Brandfetch `type=logo` in `theme=dark`: the dark wordmark, for a near-white scrim. */
+  logoWordmarkOnLightUrl?: string | null;
   employment: string;
   postedLabel: string;
+  /** When a scout last saw the posting, in the same words as `postedLabel`. */
+  confirmedLabel: string;
   summary?: string;
   dimensions?: DimensionRow[];
   /** e.g. "93 = (30 + 8 + 6 + 10 + 20) ÷ 16 × 20" */

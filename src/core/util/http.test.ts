@@ -169,4 +169,67 @@ describe('createHttp', () => {
     await http.getJson('https://api.lever.co/v0/postings/spotify?mode=json');
     expect(sleeps[0]).toBe(200);
   });
+
+  it('postJson keeps one request a second per host and sends JSON', async () => {
+    const times: number[] = [];
+    let contentType: string | null = null;
+    let userAgent: string | null = null;
+    let method: string | undefined;
+    let sentBody: unknown;
+    const { http, clock } = harness(async (_input, init) => {
+      times.push(clock.nowMs());
+      const headers = new Headers(init?.headers);
+      contentType = headers.get('content-type');
+      userAgent = headers.get('user-agent');
+      method = init?.method;
+      sentBody = init?.body ? JSON.parse(String(init.body)) : null;
+      return Response.json({ ok: true });
+    });
+    const start = clock.nowMs();
+    await http.postJson('https://api.jobspipe.dev/v1/jobs/search', { limit: 5 });
+    await http.postJson('https://api.jobspipe.dev/v1/jobs/search', { limit: 5 });
+    expect(times[0]).toBe(start);
+    expect((times[1] ?? 0) - (times[0] ?? 0)).toBeGreaterThanOrEqual(1000);
+    expect(method).toBe('POST');
+    expect(contentType).toBe('application/json');
+    expect(userAgent).toBe(USER_AGENT);
+    expect(sentBody).toEqual({ limit: 5 });
+  });
+
+  it('postJson retries a 503, honors Retry-After on a 429, and does not retry a 402', async () => {
+    let serverCalls = 0;
+    const retried = harness(async () => {
+      serverCalls += 1;
+      if (serverCalls === 1) return new Response('unavailable', { status: 503 });
+      return Response.json({ ok: true });
+    });
+    await expect(
+      retried.http.postJson('https://api.jobspipe.dev/v1/jobs/search', { q: 1 }),
+    ).resolves.toEqual({ ok: true });
+    expect(serverCalls).toBe(2);
+    expect(retried.sleeps[0]).toBe(200);
+
+    let limited = 0;
+    const rate = harness(async () => {
+      limited += 1;
+      if (limited === 1) {
+        return new Response('slow down', { status: 429, headers: { 'retry-after': '2' } });
+      }
+      return Response.json({ ok: true });
+    });
+    await rate.http.postJson('https://api.jobspipe.dev/v1/jobs/search', {});
+    expect(limited).toBe(2);
+    expect(rate.sleeps[0]).toBe(2000);
+
+    let unpaid = 0;
+    const out = harness(async () => {
+      unpaid += 1;
+      return new Response('out of credits', { status: 402 });
+    });
+    await expect(out.http.postJson('https://api.jobspipe.dev/v1/jobs/search', {})).rejects.toThrow(
+      /HTTP 402/,
+    );
+    expect(unpaid).toBe(1);
+    expect(out.sleeps).toEqual([]);
+  });
 });

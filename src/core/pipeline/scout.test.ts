@@ -13,7 +13,14 @@ import { TEST_PREFERENCES, scoreOutput, testCriteria, testProfile } from '../tes
 import { fixedClock } from '../util/clock.js';
 import { type Http, HttpError } from '../util/http.js';
 import { nullLogger } from '../util/logger.js';
-import { parseScoutProgress, runScout, sourceKeysFromEnv, startScoutRun } from './scout.js';
+import {
+  formatScoutSummary,
+  parseScoutProgress,
+  runRefresh,
+  runScout,
+  sourceKeysFromEnv,
+  startScoutRun,
+} from './scout.js';
 
 let sqlite: ReturnType<typeof createMigratedTestDb>['sqlite'];
 
@@ -49,6 +56,9 @@ describe('runScout', () => {
     const lever = readFixture('lever-spotify.json');
     const ashby = readFixture('ashby-ramp.json');
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson(url) {
         if (url === greenhouseBoardUrl('discord')) return greenhouse;
         if (url === leverBoardUrl('spotify')) return lever;
@@ -126,6 +136,9 @@ describe('runScout', () => {
     let discordFails = false;
     const calls: string[] = [];
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson(url) {
         calls.push(url);
         if (url === greenhouseBoardUrl('discord')) {
@@ -184,6 +197,9 @@ describe('runScout', () => {
     const db = freshDb();
     const clock = fixedClock('2026-10-22T12:00:00.000Z');
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson(url) {
         throw new HttpError(`HTTP 404 from ${url}`, url, 404);
       },
@@ -208,6 +224,9 @@ describe('runScout', () => {
     const clock = fixedClock('2026-10-22T12:00:00.000Z');
     let broken = false;
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson() {
         if (broken) return { jobs: [{ id: 1 }, { title: 'no url' }] };
         return readFixture('greenhouse-discord.json');
@@ -249,6 +268,9 @@ describe('runScout', () => {
     const db = freshDb();
     const clock = fixedClock('2026-10-22T12:00:00.000Z');
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson(url) {
         const id =
           url === greenhouseBoardUrl('a') ? 101 : url === greenhouseBoardUrl('b') ? 202 : 0;
@@ -301,6 +323,9 @@ describe('runScout', () => {
     const db = freshDb();
     const clock = fixedClock('2026-10-22T12:00:00.000Z');
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson() {
         return readFixture('lever-spotify.json');
       },
@@ -325,6 +350,9 @@ describe('runScout', () => {
     const db = freshDb();
     const clock = fixedClock('2026-10-22T12:00:00.000Z');
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson() {
         return readFixture('lever-spotify.json');
       },
@@ -352,6 +380,9 @@ describe('runScout', () => {
     const clock = fixedClock('2026-10-22T12:00:00.000Z');
     let empty = false;
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson() {
         return empty ? [] : readFixture('lever-spotify.json');
       },
@@ -394,6 +425,9 @@ describe('scout progress', () => {
     const clock = fixedClock('2026-10-22T12:00:00.000Z');
     const seen: number[] = [];
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson(url) {
         const progress = parseScoutProgress(runsRepo(db, clock).latest('scout')?.stats);
         if (progress?.unit === 'Board') seen.push(progress.done);
@@ -425,19 +459,52 @@ describe('scout progress', () => {
     startScoutRun(db, clock);
     expect(() => startScoutRun(db, clock)).toThrow(/scout is running/i);
   });
+
+  it("a refresh run's stats say scoring was skipped, and the fake model was not called", async () => {
+    const db = freshDb();
+    const clock = fixedClock('2026-10-22T12:00:00.000Z');
+    const llm = new FakeLlm({ responder: () => scoreOutput() });
+    const result = await runRefresh({
+      db,
+      http: {
+        async postJson() {
+          throw new Error('postJson is not used by this fake');
+        },
+        async getJson(url) {
+          throw new Error(`unexpected ${url}`);
+        },
+      },
+      clock,
+      log: nullLogger(),
+      companies: [],
+      criteria: CRIT,
+      preferences: TEST_PREFERENCES,
+      scoring: { llm, profile: testProfile() },
+    });
+    expect(result.stats.scoring).toBe('skipped');
+    expect(llm.callCount).toBe(0);
+    expect(formatScoutSummary(result)).toContain('scoring: skipped');
+  });
 });
 
 describe('sourceKeysFromEnv', () => {
   it('reads every source key the CLI and the app pass to runScout', () => {
     const env = {
       JSEARCH_API_KEY: 'j',
+      JOBSPIPE_API_KEY: 'p',
       WORKABLE_API_KEY: 'w',
       TEAMTAILOR_API_KEY: 't',
       OTHER: 'x',
     };
-    expect(sourceKeysFromEnv(env)).toEqual({ jsearch: 'j', workable: 'w', teamtailor: 't' });
+    expect(sourceKeysFromEnv(env)).toEqual({
+      jsearch: 'j',
+      jobspipe: 'p',
+      workable: 'w',
+      teamtailor: 't',
+    });
     expect(sourceKeysFromEnv({})).toEqual({
       jsearch: undefined,
+      jobspipe: undefined,
       workable: undefined,
       teamtailor: undefined,
     });

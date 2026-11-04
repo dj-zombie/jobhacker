@@ -305,5 +305,77 @@ for (const [w, h, size, mobile] of [
   await p.context().close();
 }
 
+// Refresh listings (J12). Banner when the last check is stale, Closed chip, Last confirmed.
+for (const [w, h, size] of [
+  [1440, 900, "1440"],
+  [1024, 768, "1024"],
+  [390, 844, "390"],
+]) {
+  const p = await page(w, h, "?frame=refresh");
+  await shot(p, `34-refresh-${size}`);
+  await p.context().close();
+}
+{
+  const p = await page(1440, 900, "?frame=closed");
+  await shot(p, "35-shortlist-closed-1440");
+  await p.context().close();
+}
+{
+  const p = await page(1440, 900);
+  await shot(p, "36-last-confirmed-1440");
+  await p.context().close();
+}
+
+// Start fresh (J14). Disabled confirm, then the same dialog after RESET is typed.
+for (const [w, h, size, mobile] of [
+  [1440, 900, "1440", false],
+  [1024, 768, "1024", false],
+  [390, 844, "390", true],
+]) {
+  const p = await page(w, h);
+  if (mobile) {
+    await p.getByRole("button", { name: "Open navigation" }).first().click();
+    await p.waitForTimeout(600);
+  }
+  await p.getByRole("button", { name: "Start fresh" }).click();
+  await p.waitForTimeout(400);
+  await shot(p, `39-reset-${size}`);
+  await p.getByLabel("Type RESET to confirm").fill("RESET");
+  await p.waitForTimeout(200);
+  await shot(p, `39-reset-typed-${size}`);
+  await p.context().close();
+}
+
+// Board upkeep (J15). A gone board with a board found for it, one with none (the link field and
+// where JobHacker looked), and the field's error for a careers page. Below 1280 the sidebar is a
+// rail, so the 1024 frames show the collapsed card.
+for (const [w, h, size, mobile] of [
+  [1440, 900, "1440", false],
+  [1024, 768, "1024", false],
+  [390, 844, "390", true],
+]) {
+  for (const [query, name, paste] of [
+    ["?scout=moved", "40-board-moved", ""],
+    ["?scout=gone", "41-board-gone", ""],
+    ["?scout=gone", "42-board-link-error", "https://example.com/careers"],
+  ]) {
+    const p = await page(w, h, query);
+    if (mobile) {
+      await p.getByRole("button", { name: "Open navigation" }).first().click();
+      await p.waitForTimeout(700);
+    }
+    if (paste) {
+      const field = p.getByLabel(/new careers link/).first();
+      if (await field.isVisible()) {
+        await field.fill(paste);
+        await p.getByRole("button", { name: "Move" }).first().click();
+        await p.waitForTimeout(300);
+      }
+    }
+    await shot(p, `${name}-${size}`);
+    await p.context().close();
+  }
+}
+
 await browser.close();
 console.log("ERRORS:", errors.length ? errors.join("\n") : "none");

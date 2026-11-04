@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { Globe, Building2, MapPin, Shuffle, HelpCircle } from "lucide-react";
+import { Globe, Building2, MapPin, Shuffle, HelpCircle, CircleOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RemoteType, TriageState } from "./types";
 
@@ -47,6 +47,21 @@ export function StateChip({ state, className }: { state: TriageState; className?
       )}
     >
       {s.label}
+    </span>
+  );
+}
+
+/** A posting the sources no longer list. The word carries it; the color does not. */
+export function ClosedChip({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-danger-wash px-1.5 text-2xs font-medium text-danger ring-1 ring-inset ring-danger/25",
+        className,
+      )}
+    >
+      <CircleOff className="size-3" />
+      Closed
     </span>
   );
 }

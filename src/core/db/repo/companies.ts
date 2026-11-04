@@ -48,6 +48,22 @@ export function companiesRepo(db: Db, clock: Clock) {
     },
 
     /**
+     * Set `active` on one board. Returns false when that ats + token is not in
+     * the table. Jobs are left as they are.
+     */
+    setActive(ats: Ats, token: string, active: boolean): boolean {
+      const existing = db
+        .select()
+        .from(companies)
+        .where(and(eq(companies.ats, ats), eq(companies.token, token)))
+        .get();
+      if (!existing) return false;
+      if (existing.active === active) return true;
+      db.update(companies).set({ active }).where(eq(companies.id, existing.id)).run();
+      return true;
+    },
+
+    /**
      * Deactivate any currently-active company whose board is no longer present in
      * `keep` (the boards in `companies.yaml` this run). Jobs are left untouched —
      * scout only closes jobs after a successful fetch, so a removed board's

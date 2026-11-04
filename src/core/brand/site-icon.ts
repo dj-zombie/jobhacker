@@ -128,11 +128,22 @@ export function companyLogoSrc(input: {
 export interface HeaderLogos {
   /** The 256 px cover. */
   cover: string | null;
-  /** The glyph drawn large on the art. Null, or a `404`, and the art draws the icon. */
-  symbol: string | null;
-  /** The wordmark above the title. Null, or a `404`, and the header shows the name. */
-  wordmark: string | null;
+  /** Light-colored symbol, for dark art. Null, or a `404`, and the art draws the icon. */
+  symbolOnDark: string | null;
+  /** Dark-colored symbol, for light art. */
+  symbolOnLight: string | null;
+  /** Light-colored wordmark, for a dark backdrop. Null, or a `404`, and the header shows the name. */
+  wordmarkOnDark: string | null;
+  /** Dark-colored wordmark, for a light backdrop. */
+  wordmarkOnLight: string | null;
 }
+
+const NO_MARKS = {
+  symbolOnDark: null,
+  symbolOnLight: null,
+  wordmarkOnDark: null,
+  wordmarkOnLight: null,
+};
 
 /**
  * The job detail header's logos (J11). A typed domain has only its site's icon, so
@@ -146,12 +157,14 @@ export function companyHeaderLogos(input: {
 }): HeaderLogos {
   const cover = companyLogoSrc({ ...input, size: LOGO_HEADER_PX });
   if (input.source === 'none' || input.source === 'typed') {
-    return { cover, symbol: null, wordmark: null };
+    return { cover, ...NO_MARKS };
   }
   const asset = { domain: input.domain, clientId: input.clientId };
   return {
     cover,
-    symbol: brandAssetUrl({ ...asset, type: 'symbol' }),
-    wordmark: brandAssetUrl({ ...asset, type: 'wordmark' }),
+    symbolOnDark: brandAssetUrl({ ...asset, type: 'symbol', theme: 'light' }),
+    symbolOnLight: brandAssetUrl({ ...asset, type: 'symbol', theme: 'dark' }),
+    wordmarkOnDark: brandAssetUrl({ ...asset, type: 'wordmark', theme: 'light' }),
+    wordmarkOnLight: brandAssetUrl({ ...asset, type: 'wordmark', theme: 'dark' }),
   };
 }

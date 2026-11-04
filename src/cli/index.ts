@@ -10,8 +10,10 @@ import {
 import { applyCommand } from './commands/apply.js';
 import { backupCommand } from './commands/backup.js';
 import { boardsDiscover } from './commands/boards-discover.js';
+import { boardsHarvest, boardsRelocate } from './commands/boards-upkeep.js';
 import { chromeCommand } from './commands/chrome.js';
 import { companiesAdd } from './commands/companies-add.js';
+import { companiesMove } from './commands/companies-move.js';
 import { configCheck } from './commands/config-check.js';
 import { configMigrateCommand } from './commands/config-migrate.js';
 import { dbInfo, dbMigrate } from './commands/db.js';
@@ -21,6 +23,7 @@ import { placesReclassifyCommand } from './commands/places.js';
 import { prepCommand } from './commands/prep.js';
 import { profileBuildCommand, profileCheckCommand } from './commands/profile.js';
 import { rankCommand } from './commands/rank.js';
+import { resetCommand } from './commands/reset.js';
 import { scoreCommand } from './commands/score.js';
 import { scoutCommand } from './commands/scout.js';
 import { statsCommand } from './commands/stats.js';
@@ -69,10 +72,29 @@ program
   .action(companiesAdd);
 
 program
+  .command('companies:move')
+  .description('verify a careers link (one fetch), add that board, and set the old board inactive')
+  .argument('<from>', 'the board that moved, as ats/token (e.g. ashby/coinhako)')
+  .argument('<url>', "the new board's careers link")
+  .action(companiesMove);
+
+program
   .command('boards:discover')
   .description('slug-probe seed companies against the enabled ATS boards and append hits')
   .requiredOption('--seed <file>', 'newline-delimited company names or ats/token lines')
   .action(boardsDiscover);
+
+program
+  .command('boards:harvest')
+  .description(
+    'probe every board that stored search hits link to, and append the ones with postings',
+  )
+  .action(boardsHarvest);
+
+program
+  .command('boards:relocate')
+  .description('look for where each gone board in the latest finished scout moved (offers only)')
+  .action(boardsRelocate);
 
 program
   .command('scout')
@@ -192,6 +214,14 @@ program
   .command('backup')
   .description('copy the database to a timestamped file under data/backups/')
   .action(backupCommand);
+
+program
+  .command('reset')
+  .description(
+    'empty the queue of jobs with no application, after a backup. Prints the plan unless --yes',
+  )
+  .option('--yes', 'take a backup, then apply the reset')
+  .action(resetCommand);
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   console.error(err instanceof Error ? err.message : String(err));

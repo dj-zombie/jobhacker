@@ -34,6 +34,8 @@ export interface TriageRowData {
   seenAt: string;
   prescore: number | null;
   status: JobStatus;
+  /** The posting is closed. Only Shortlist includes these rows. */
+  closed: boolean;
   /** Kris's areas this job is in (`job_areas`). */
   areas: string[];
   /** Scores under the current cache key; null while unscored or stale. */
@@ -51,6 +53,8 @@ export interface TriageDetailData {
   row: TriageRowData;
   employment: string;
   postedAt: string | null;
+  /** When a scout last saw the posting. */
+  lastSeenAt: string;
   description: string;
   postingUrl: string;
   summary: string | null;
@@ -90,6 +94,8 @@ export interface TriagePageData {
   liveRun: ScoreRunState | null;
   /** Passed once. The client builds each logo URL. Empty means every tile is a monogram. */
   logoClientId: string | null;
+  /** Set when the last finished scout is stale, or none has finished. `checkedOn` is already in words. */
+  banner: { checkedOn: string | null } | null;
 }
 
 const DIM_KEY: Record<Dimension, DimKey> = {
@@ -178,6 +184,7 @@ export function toSummary(
     band,
     prescore: row.prescore,
     state: stateOf(row.status, application),
+    closed: row.closed,
     place: place ? { id: place.id, label: place.label } : null,
   };
 }
@@ -189,14 +196,27 @@ export function toSummary(
 export function headerLogosFor(
   row: Pick<TriageRowData, 'domain' | 'logoSource' | 'markUrl'>,
   logoClientId: string | null,
-): Pick<JobDetailData, 'logoTileUrl' | 'logoSymbolUrl' | 'logoWordmarkUrl'> {
+): Pick<
+  JobDetailData,
+  | 'logoTileUrl'
+  | 'logoSymbolOnDarkUrl'
+  | 'logoSymbolOnLightUrl'
+  | 'logoWordmarkOnDarkUrl'
+  | 'logoWordmarkOnLightUrl'
+> {
   const logos = companyHeaderLogos({
     domain: row.domain,
     source: row.logoSource,
     markUrl: row.markUrl,
     clientId: logoClientId,
   });
-  return { logoTileUrl: logos.cover, logoSymbolUrl: logos.symbol, logoWordmarkUrl: logos.wordmark };
+  return {
+    logoTileUrl: logos.cover,
+    logoSymbolOnDarkUrl: logos.symbolOnDark,
+    logoSymbolOnLightUrl: logos.symbolOnLight,
+    logoWordmarkOnDarkUrl: logos.wordmarkOnDark,
+    logoWordmarkOnLightUrl: logos.wordmarkOnLight,
+  };
 }
 
 /** "Oct 24", or "today"/"yesterday", for the detail's Posted line. */
@@ -273,6 +293,7 @@ export function toDetailData(
     ...headerLogosFor(detail.row, logoClientId),
     employment: employmentLabel(detail.employment),
     postedLabel: postedLabel(detail.postedAt, nowMs),
+    confirmedLabel: postedLabel(detail.lastSeenAt, nowMs),
     summary: detail.summary ?? undefined,
     dimensions,
     formula:

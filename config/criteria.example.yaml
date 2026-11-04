@@ -66,7 +66,8 @@ sources:
       monthly_call_budget: 200     # free tier; raise to 10000 on the $25/mo plan
     jobspipe:
       enabled: false
-      monthly_call_budget: 0
+      monthly_call_budget: 0       # requests per month
+      monthly_credit_budget: 0     # credits per month; one call asks for no more jobs than this has left
     hn:
       enabled: true
       monthly_call_budget: 100

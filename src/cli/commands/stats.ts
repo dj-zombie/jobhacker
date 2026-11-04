@@ -2,6 +2,7 @@ import { loadAllConfig } from '../../core/config/load.js';
 import { openDbReadonly } from '../../core/db/client.js';
 import { scoringInputs } from '../../core/pipeline/score.js';
 import { computeStats, renderStats } from '../../core/pipeline/stats.js';
+import { DEFAULT_CACHE_PATH, readCache } from '../../core/sources/discover.js';
 import { systemClock } from '../../core/util/clock.js';
 import { reportCliError } from '../errors.js';
 
@@ -22,6 +23,10 @@ export function statsCommand(): void {
       clock: systemClock,
       criteria: config.criteria,
       current: key,
+      links: {
+        listed: config.companies.companies,
+        cache: readCache(DEFAULT_CACHE_PATH).entries,
+      },
     });
     console.log(renderStats(stats));
   } catch (err) {

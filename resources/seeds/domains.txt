@@ -1,0 +1,335 @@
+# Companies in the domains preferences.md names: games and game tools, audio and music tech,
+# creative tools, and developer tools. Candidates, not verified boards: boards:discover probes each
+# name on every enabled keyless ATS, hyphenated and joined, and appends only boards with postings.
+# Games, game studios and game tech
+Naughty Dog
+Sucker Punch Productions
+Respawn Entertainment
+Blizzard Entertainment
+Activision
+Bethesda
+ZeniMax
+Obsidian Entertainment
+inXile Entertainment
+Hi-Rez Studios
+Wizards of the Coast
+Scopely
+Zynga
+Playtika
+Kabam
+Big Fish Games
+Rovio
+Supercell
+Mojang
+Sony Interactive Entertainment
+PlayStation
+Square Enix
+Bandai Namco
+Sega
+Take-Two Interactive
+2K
+Gearbox
+Firaxis
+Cloud Imperium Games
+CD Projekt
+Paradox Interactive
+Remedy Entertainment
+Avalanche Studios
+Splash Damage
+Frontier Developments
+Jagex
+Wargaming
+Mythical Games
+Immutable
+Inworld AI
+Hidden Door
+Monolith Productions
+ProbablyMonsters
+Bonfire Studios
+Frost Giant Studios
+Dreamhaven
+Theorycraft Games
+Singularity 6
+Moon Studios
+Undead Labs
+Pipeworks Studios
+Panic
+Playdate
+Unity Technologies
+Overwolf
+mod.io
+Heroic Labs
+Hathora
+Pragma
+Beamable
+AccelByte
+Improbable
+Rec Room
+Manticore Games
+Kongregate
+GameAnalytics
+Edgegap
+Medal
+Streamlabs
+Twitch
+Discord
+Audiokinetic
+Firelight Technologies
+Keywords Studios
+Netflix Games
+# Audio, music technology and creative audio
+Spotify
+SoundCloud
+Bandcamp
+Sonos
+Dolby
+Shure
+Bose
+Roland
+Yamaha
+Fender
+Gibson
+inMusic
+Output
+LANDR
+BandLab
+Waves Audio
+Slate Digital
+Plugin Alliance
+Krisp
+Descript
+Riverside
+Endel
+Moises
+Musixmatch
+Epidemic Sound
+Artlist
+Soundstripe
+Musicbed
+DistroKid
+TuneCore
+Kobalt
+Audius
+Serato
+AlphaTheta
+Universal Music Group
+Warner Music Group
+Sony Music
+SiriusXM
+Pandora
+Acast
+Smule
+Yousician
+Muse Group
+Steinberg
+Bitwig
+Image-Line
+PreSonus
+Spitfire Audio
+Sonarworks
+Krotos
+Soundly
+Native Instruments
+Soundwide
+Universal Audio
+iZotope
+Teenage Engineering
+Splice
+Suno
+Udio
+ElevenLabs
+# Creative tools
+Figma
+Framer
+Sketch
+Procreate
+Savage Interactive
+Pitch
+tldraw
+Rive
+Spline
+LottieFiles
+Runway
+Pika
+Luma AI
+Midjourney
+Stability AI
+Captions
+Frame.io
+Vimeo
+Loom
+Mux
+Cloudinary
+Shutterstock
+Getty Images
+Unsplash
+Envato
+Squarespace
+Wix
+Gamma
+Tome
+Beautiful.ai
+Prezi
+Mural
+Lucid Software
+Whimsical
+Krea
+Ideogram
+Leonardo AI
+Picsart
+VSCO
+Lightricks
+Glowforge
+Maxon
+Autodesk
+SideFX
+Shapr3D
+Gravity Sketch
+Bezi
+ShapesXR
+Sketchfab
+Toon Boom
+Canva
+Miro
+Webflow
+Adobe
+Notion
+Coda
+Airtable
+# Developer tools
+Netlify
+Fly.io
+Railway
+Replit
+Sourcegraph
+Linear
+Raycast
+Warp
+Zed Industries
+Anysphere
+Cursor
+Codeium
+Windsurf
+Tabnine
+Snyk
+LaunchDarkly
+Statsig
+PostHog
+Amplitude
+Mixpanel
+Twilio
+Stripe
+Plaid
+Retool
+Temporal Technologies
+Prisma
+PlanetScale
+Turso
+Convex
+Clerk
+WorkOS
+Stytch
+Inngest
+Trigger.dev
+Resend
+Liveblocks
+Tiptap
+Chromatic
+Cypress
+BrowserStack
+Sauce Labs
+Algolia
+MongoDB
+Redis
+Cockroach Labs
+Grafana Labs
+Honeycomb
+Chronosphere
+Dynatrace
+incident.io
+Rootly
+FireHydrant
+Buildkite
+CircleCI
+Harness
+Depot
+Dagger
+Docker
+Kong
+Apollo GraphQL
+Hasura
+Spacelift
+Doppler
+1Password
+Bitwarden
+Expo
+Ionic
+Shopify
+Builder.io
+Sanity
+Contentful
+Strapi
+Storyblok
+Hygraph
+Mintlify
+ReadMe
+GitBook
+Stainless
+Speakeasy
+Val Town
+Deno
+StackBlitz
+CodeSandbox
+Fastly
+DigitalOcean
+Modal
+Replicate
+Hugging Face
+Weights & Biases
+Anyscale
+Baseten
+OpenAI
+Anthropic
+Cohere
+Together AI
+Fireworks AI
+Groq
+LangChain
+LlamaIndex
+Pinecone
+Weaviate
+Airbyte
+Fivetran
+dbt Labs
+Hex
+Observable
+Deepnote
+Metabase
+Preset
+Appsmith
+n8n
+Zapier
+Pipedream
+Asana
+ClickUp
+Productboard
+Pendo
+FullStory
+LogRocket
+Calendly
+Cal.com
+Mattermost
+Doist
+37signals
+Automattic
+Buffer
+Help Scout
+GitHub
+HashiCorp
+Postman
+Atlassian
+Vercel
+Supabase
+Sentry
+Tailscale
+Render

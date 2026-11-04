@@ -165,6 +165,9 @@ describe('discoverBoards', () => {
     const seed = join(dir, 'seed.txt');
     writeFileSync(seed, 'greenhouse/discord\nno-such-board\n');
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson(url: string) {
         if (url.includes('/discord/')) return fixture('greenhouse-discord.json');
         throw new HttpError(`HTTP 404 from ${url}`, url, 404);
@@ -179,7 +182,7 @@ describe('discoverBoards', () => {
       cachePath: join(dir, 'cache.json'),
     });
     expect(stats.added).toBe(1);
-    expect(stats.misses).toBe(1);
+    expect(stats.misses).toBe(2);
     const yaml = readFileSync(join(dir, 'companies.yaml'), 'utf8');
     expect(yaml).toContain('discord');
     expect(yaml).not.toContain('no-such-board');
@@ -187,6 +190,9 @@ describe('discoverBoards', () => {
     const again = await discoverBoards({
       seedPath: seed,
       http: {
+        async postJson() {
+          throw new Error('postJson is not used by this fake');
+        },
         async getJson() {
           throw new Error('should not probe a cached token');
         },
@@ -196,7 +202,43 @@ describe('discoverBoards', () => {
       dir,
       cachePath: join(dir, 'cache.json'),
     });
-    expect(again.cached).toBe(2);
+    expect(again.cached).toBe(3);
     expect(again.probed).toBe(0);
+  });
+
+  it('probes a multi-word name joined as well as hyphenated, and stops at the first hit', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'jobhacker-discover-'));
+    writeFileSync(join(dir, 'companies.yaml'), 'companies: []\n');
+    const seed = join(dir, 'seed.txt');
+    writeFileSync(seed, 'Riot Games\nDiscord\n');
+    const probed: string[] = [];
+    const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
+      async getJson(url: string) {
+        probed.push(url);
+        if (url.includes('/boards/riotgames/') || url.includes('/boards/discord/')) {
+          return fixture('greenhouse-discord.json');
+        }
+        throw new HttpError(`HTTP 404 from ${url}`, url, 404);
+      },
+    };
+    const stats = await discoverBoards({
+      seedPath: seed,
+      http,
+      log: nullLogger(),
+      enabled: ['greenhouse'],
+      dir,
+      cachePath: join(dir, 'cache.json'),
+    });
+    expect(probed.map((url) => new URL(url).pathname.split('/')[3])).toEqual([
+      'riot-games',
+      'riotgames',
+      'discord',
+    ]);
+    expect(stats.added).toBe(2);
+    expect(stats.misses).toBe(1);
+    expect(readFileSync(join(dir, 'companies.yaml'), 'utf8')).toContain('token: riotgames');
   });
 });

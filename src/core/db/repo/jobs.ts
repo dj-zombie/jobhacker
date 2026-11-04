@@ -34,6 +34,12 @@ export interface UpsertResult {
   companyChanged: boolean;
 }
 
+/** How many jobs a close stamped, and how many of those were already shortlisted. */
+export interface CloseReport {
+  closed: number;
+  shortlisted: number;
+}
+
 /** A job ready to be scored: the fields the scoring prompt needs, plus the hash. */
 export interface ScorableJob {
   id: number;
@@ -70,6 +76,22 @@ export interface ScorableOrder {
 }
 
 const CHUNK = 500;
+
+/** Stamp `closed_at`. Status is left as it was, including a human triage status. */
+function stampClosed(
+  db: Db,
+  rows: readonly { id: number; status: string }[],
+  closedAt: string,
+): CloseReport {
+  if (rows.length === 0) return { closed: 0, shortlisted: 0 };
+  const shortlisted = rows.filter((job) => job.status === 'shortlisted').length;
+  const ids = rows.map((job) => job.id);
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    db.update(jobs).set({ closedAt }).where(inArray(jobs.id, chunk)).run();
+  }
+  return { closed: ids.length, shortlisted };
+}
 
 /** Automated states that a content change sends back to `new`. */
 const RESETTABLE_STATUSES = ['filtered_out', 'unscored', 'scored'] as const;
@@ -234,23 +256,25 @@ export function jobsRepo(db: Db) {
     },
 
     /**
+     * Set `closed_at` on these still-open jobs. Already-closed jobs are not
+     * passed in. A shortlisted row stays shortlisted; the report counts it.
+     */
+    closeJobs(rows: readonly { id: number; status: string }[], closedAt: string): CloseReport {
+      return stampClosed(db, rows, closedAt);
+    },
+
+    /**
      * Set `closed_at` on this company's still-open jobs whose external id was
      * not in the board response. Already-closed jobs keep their original time.
      */
-    closeMissing(companyId: number, seen: ReadonlySet<string>, closedAt: string): number {
+    closeMissing(companyId: number, seen: ReadonlySet<string>, closedAt: string): CloseReport {
       const open = db
-        .select({ id: jobs.id, externalId: jobs.externalId })
+        .select({ id: jobs.id, externalId: jobs.externalId, status: jobs.status })
         .from(jobs)
         .where(and(eq(jobs.companyId, companyId), isNull(jobs.closedAt)))
         .all();
-      const ids = open.filter((job) => !seen.has(job.externalId)).map((job) => job.id);
-      if (ids.length === 0) return 0;
-
-      for (let i = 0; i < ids.length; i += CHUNK) {
-        const chunk = ids.slice(i, i + CHUNK);
-        db.update(jobs).set({ closedAt }).where(inArray(jobs.id, chunk)).run();
-      }
-      return ids.length;
+      const missing = open.filter((job) => !seen.has(job.externalId));
+      return stampClosed(db, missing, closedAt);
     },
   };
 }

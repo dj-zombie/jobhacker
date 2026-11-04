@@ -96,6 +96,7 @@ export function toSummary(job: DemoJob, w: Weights, t: Thresholds): JobSummary {
     band: score != null ? bandFor(score, t) : null,
     prescore: job.prescore,
     state: job.state,
+    closed: job.closed,
     place: (() => {
       const id = areasOf(job).find((a) => a !== REMOTE);
       return id ? { id, label: PLACE_LABEL.get(id) ?? id } : null;
@@ -131,10 +132,13 @@ export function toDetail(job: DemoJob, w: Weights, t: Thresholds): JobDetailData
     ...base,
     // The prototype has one stand-in per company. The app passes the 256 px URL here.
     logoTileUrl: base.logoUrl,
-    logoSymbolUrl: demoSymbolUrl(job.company),
-    logoWordmarkUrl: demoWordmarkUrl(job.company),
+    logoSymbolOnDarkUrl: demoSymbolUrl(job.company, "white"),
+    logoSymbolOnLightUrl: demoSymbolUrl(job.company, "black"),
+    logoWordmarkOnDarkUrl: demoWordmarkUrl(job.company, "white"),
+    logoWordmarkOnLightUrl: demoWordmarkUrl(job.company, "black"),
     employment: job.employment,
     postedLabel: job.postedLabel,
+    confirmedLabel: job.confirmedLabel ?? "8 days ago",
     summary: job.summary ?? `${job.title} at ${job.company}, ${job.location}.`,
     dimensions,
     formula,
@@ -180,7 +184,10 @@ export interface State {
 
 // `?stress` replicates the scored jobs to about 11,000 rows to check virtualization.
 const STRESS = typeof location !== "undefined" && location.search.includes("stress");
-const BASE_JOBS = JOBS.map((j) => ({ ...j }));
+const FRAME = typeof location !== "undefined" ? new URLSearchParams(location.search).get("frame") : null;
+const BASE_JOBS = JOBS.map((j) =>
+  FRAME === "closed" && j.id === "vercel-de" ? { ...j, state: "shortlisted" as const, closed: true } : { ...j },
+);
 const SEED_JOBS = STRESS
   ? BASE_JOBS.concat(
       Array.from({ length: 300 }, (_, k) =>
@@ -195,7 +202,12 @@ export const initialState: State = {
   savedWeights: { ...DEFAULT_WEIGHTS },
   thresholds: { ...DEFAULT_THRESHOLDS },
   savedThresholds: { ...DEFAULT_THRESHOLDS },
-  selected: { top: "linear-pe", new: null, shortlist: null, unscored: null },
+  selected: {
+    top: "linear-pe",
+    new: null,
+    shortlist: FRAME === "closed" ? "vercel-de" : null,
+    unscored: null,
+  },
   leavingId: null,
   history: [],
   density: "comfortable",

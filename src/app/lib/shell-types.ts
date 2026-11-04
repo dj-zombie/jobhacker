@@ -12,9 +12,23 @@ export interface ShellCounts {
   logos: number;
 }
 
+export interface ScoutNotice {
+  text: string;
+  /** Set when the fix is to stop scouting this board. */
+  retire?: { ats: string; token: string; name: string };
+  /**
+   * Set when the board is gone (J15): where JobHacker looked (null on a run from before J15) and
+   * the boards it found, labelled for the card.
+   */
+  relocate?: {
+    looked: string | null;
+    candidates: Array<{ ats: string; token: string; label: string; detail: string }>;
+  };
+}
+
 export interface ScoutCardView {
   status: 'ok' | 'attention' | 'failed';
-  notices: string[];
+  notices: ScoutNotice[];
   running: boolean;
   lastRunLabel: string;
   boards: number;
@@ -31,6 +45,9 @@ export interface ScoutRunView {
   ok: boolean | null;
   error: string | null;
   inserted: number | null;
+  /** Jobs this run closed, and how many of those were shortlisted. */
+  closed: number | null;
+  closedShortlisted: number | null;
   boardsOk: number | null;
   boards: number | null;
   errorCount: number | null;

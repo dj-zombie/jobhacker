@@ -7,13 +7,14 @@ import { domainsRepo } from '../db/repo/domains.js';
 import { runsRepo } from '../db/repo/runs.js';
 import { events, GATE_NAMES, type GateName, applications, companies, jobs } from '../db/schema.js';
 import { monthlyUsage } from '../llm/usage.js';
-import { callsThisMonth } from '../sources/budget.js';
+import { callsThisMonth, creditsThisMonth } from '../sources/budget.js';
 import type { Clock } from '../util/clock.js';
 import { areaCounts, whereDefault } from './areas.js';
 import { computeFunnel } from './funnel.js';
 import { rankedList } from './ranked.js';
 import type { ScoringKey } from './score.js';
 import { followUpsDue } from './tracker.js';
+import { unlistedLinks } from './upkeep.js';
 
 /**
  * The usefulness snapshot (AGENTS § The usefulness snapshot): the same numbers
@@ -39,6 +40,18 @@ export interface UsefulnessStats {
   newLastDay: number;
   /** Open, canonical jobs whose record came from a search source: what search adds beyond the boards. */
   searchOnly: { total: number; bySource: { source: string; count: number }[] };
+  /**
+   * Boards on enabled keyless ATSs that stored search hits link to and companies.yaml doesn't
+   * list (J15), split by what the discovery cache knows, plus links JobHacker can't read, by ATS.
+   * Null when companies.yaml and the cache were not passed in.
+   */
+  links: {
+    unlisted: number;
+    toProbe: number;
+    missed: number;
+    empty: number;
+    unreadable: { ats: string; count: number }[];
+  } | null;
   scored: { current: number; stale: number; unscored: number };
   matches: { strong: number; maybe: number; weak: number };
   /**
@@ -65,7 +78,15 @@ export interface UsefulnessStats {
     month: string;
     modelCalls: number;
     estimatedUsd: number;
-    sources: { name: string; enabled: boolean; calls: number; budget: number }[];
+    sources: {
+      name: string;
+      enabled: boolean;
+      calls: number;
+      budget: number;
+      /** Set for JobsPipe, which is also budgeted in credits. */
+      credits?: number;
+      creditBudget?: number;
+    }[];
   };
 }
 
@@ -75,6 +96,11 @@ export interface StatsDeps {
   criteria: Criteria;
   /** The current scoring key, so stale scores are counted as stale. */
   current?: ScoringKey;
+  /** companies.yaml's boards and the discovery cache's entries, for the `links` line. Read only. */
+  links?: {
+    listed: ReadonlyArray<{ ats: string; token: string }>;
+    cache: Record<string, string>;
+  };
 }
 
 /** The counts stored on each `fill` event (`apply.ts`). `self_identification` is absent on older events. */
@@ -107,6 +133,7 @@ export function computeStats(deps: StatsDeps): UsefulnessStats {
     scout: lastScout(db, clock),
     newLastDay: newSince(db, new Date(clock.nowMs() - DAY_MS).toISOString()),
     searchOnly: searchOnly(db),
+    links: deps.links ? linkCounts(db, criteria, deps.links) : null,
     scored: {
       current: funnel.scored.current,
       stale: funnel.scored.stale,
@@ -124,6 +151,24 @@ export function computeStats(deps: StatsDeps): UsefulnessStats {
     fill: fillQuality(db),
     time: timeToSubmit(db),
     spend: spend(db, clock, criteria),
+  };
+}
+
+function linkCounts(
+  db: Db,
+  criteria: Criteria,
+  input: NonNullable<StatsDeps['links']>,
+): UsefulnessStats['links'] {
+  const enabled = (criteria.sources ?? LEGACY_SOURCES).boards.enabled;
+  const counted = unlistedLinks(db, input.listed, enabled, input.cache);
+  return {
+    unlisted: counted.unlisted,
+    toProbe: counted.toProbe,
+    missed: counted.missed,
+    empty: counted.empty,
+    unreadable: Object.entries(counted.unreadable)
+      .map(([ats, count]) => ({ ats, count }))
+      .sort((a, b) => b.count - a.count || a.ats.localeCompare(b.ats)),
   };
 }
 
@@ -322,13 +367,29 @@ function spend(db: Db, clock: Clock, criteria: Criteria): UsefulnessStats['spend
     month: now.slice(0, 7),
     modelCalls: usage.calls,
     estimatedUsd: usage.estimatedUsd,
-    sources: SEARCH_ATS.map((name) => ({
-      name,
-      enabled: search[name].enabled,
-      calls: callsThisMonth(db, name, now),
-      budget: search[name].monthly_call_budget,
-    })),
+    sources: SEARCH_ATS.map((name) => {
+      const source = search[name];
+      const row = {
+        name,
+        enabled: source.enabled,
+        calls: callsThisMonth(db, name, now),
+        budget: source.monthly_call_budget,
+      };
+      if (name !== 'jobspipe') return row;
+      return {
+        ...row,
+        credits: creditsThisMonth(db, name, now),
+        creditBudget: search.jobspipe.monthly_credit_budget,
+      };
+    }),
   };
+}
+
+function spendSource(src: UsefulnessStats['spend']['sources'][number]): string {
+  if (!src.enabled) return `${src.name} off`;
+  const calls = `${src.name} ${src.calls}/${src.budget} calls`;
+  if (src.credits == null || src.creditBudget == null) return calls;
+  return `${calls} · ${src.credits}/${src.creditBudget} credits`;
 }
 
 function list(items: { label: string; count: number }[]): string {
@@ -348,6 +409,15 @@ function duration(seconds: number | null): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function linksLine(links: UsefulnessStats['links']): string {
+  if (!links) return 'not read';
+  const unreadable =
+    links.unreadable.length > 0
+      ? `unreadable: ${list(links.unreadable.map((u) => ({ label: u.ats, count: u.count })))}`
+      : 'unreadable: none';
+  return `${links.unlisted} boards linked from search hits not in companies.yaml: ${links.toProbe} to probe · ${links.missed} missed · ${links.empty} empty · ${unreadable}`;
 }
 
 /** Plain-text rendering for the CLI, one line per AGENTS § The usefulness snapshot row. */
@@ -396,11 +466,7 @@ export function renderStats(s: UsefulnessStats): string {
       ? `no shortlisted → submitted times yet (${s.time.submissions} submitted)`
       : `median ${s.time.medianMinutes} min from shortlisted to marked submitted, over ${plural(s.time.measured, 'submission')}${unmeasured}`;
 
-  const sources = s.spend.sources
-    .map((src) =>
-      src.enabled ? `${src.name} ${src.calls}/${src.budget} calls` : `${src.name} off`,
-    )
-    .join(' · ');
+  const sources = s.spend.sources.map(spendSource).join(' · ');
 
   const lines: [string, string][] = [
     [
@@ -414,6 +480,7 @@ export function renderStats(s: UsefulnessStats): string {
     ['scout', scout],
     ['new', `${s.newLastDay} first seen in the last 24 hours`],
     ['search', search],
+    ['links', linksLine(s.links)],
     [
       'scored',
       `${s.scored.current} current · ${s.scored.stale} stale · ${s.scored.unscored} unscored`,

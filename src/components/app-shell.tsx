@@ -6,6 +6,8 @@ import {
   CommandPalette,
   type NavSection,
   type PaletteGroup,
+  type ResetCounts,
+  ResetDialog,
   ScoutCard,
   type ShortcutGroup,
   ShortcutsDialog,
@@ -22,12 +24,14 @@ import {
   BellRing,
   Bookmark,
   CircleDashed,
+  Eraser,
   FileText,
   Images,
   Inbox,
   Keyboard,
   Menu,
   Radar,
+  RefreshCw,
   Rows3,
   Send,
   SlidersHorizontal,
@@ -39,7 +43,16 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 import { LogoEditor, useLogoEditor } from '../app/components/LogoEditor.js';
 import { LogoDomainProvider, LogoLookup } from '../app/components/LogoLookup.js';
-import { runScoutNow } from '../app/lib/actions.js';
+import {
+  type MoveBoardResult,
+  confirmReset,
+  loadResetPlan,
+  moveBoardToCandidate,
+  moveBoardToLink,
+  refreshListings,
+  runScoutNow,
+  turnOffBoard,
+} from '../app/lib/actions.js';
 import type {
   PaletteJob,
   ScoutCardView,
@@ -126,6 +139,7 @@ export interface TriageStore {
 interface ShellContext {
   openMobileNav: () => void;
   runScout: () => void;
+  refreshListings: () => void;
   triage: TriageStore;
   /** A job chosen in ⌘K. The triage view selects it, then clears it. */
   pendingJob: { id: string; token: number } | null;
@@ -143,6 +157,7 @@ const noop = () => {};
 const Ctx = React.createContext<ShellContext>({
   openMobileNav: noop,
   runScout: noop,
+  refreshListings: noop,
   triage: {
     overrides: new Map(),
     setStatus: noop,
@@ -164,6 +179,11 @@ export function useTriageStore(): TriageStore {
 /** The sidebar's Run scout, for an empty New today. */
 export function useRunScout(): () => void {
   return React.useContext(Ctx).runScout;
+}
+
+/** Refresh listings, from the scout card and the stale banner. */
+export function useRefreshListings(): () => void {
+  return React.useContext(Ctx).refreshListings;
 }
 
 /** ⌘K's selected job, and the tune-panel request. The triage view consumes both. */
@@ -240,6 +260,7 @@ function sectionsFor(
   counts: ShellCounts | null,
   query: string,
   logosMissing: number | undefined,
+  onStartFresh: () => void,
 ): NavSection[] {
   const c = counts;
   return [
@@ -294,7 +315,10 @@ function sectionsFor(
     },
     {
       label: 'Setup',
-      items: [{ href: '/companies', label: 'Company logos', icon: Images, count: logosMissing }],
+      items: [
+        { href: '/companies', label: 'Company logos', icon: Images, count: logosMissing },
+        { label: 'Start fresh', icon: Eraser, onSelect: onStartFresh },
+      ],
     },
   ];
 }
@@ -448,11 +472,30 @@ function ShellFrame({
   const [liveProgress, setLiveProgress] = React.useState<ScoutCardView['progress']>(null);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
+  const [resetOpen, setResetOpen] = React.useState(false);
+  const [resetPlan, setResetPlan] = React.useState<ResetCounts | null>(null);
+  const [resetPhase, setResetPhase] = React.useState<'confirm' | 'done'>('confirm');
+  const [resetBusy, setResetBusy] = React.useState(false);
+  const [resetError, setResetError] = React.useState<string | null>(null);
+  const [retire, setRetire] = React.useState<{
+    ats: string;
+    token: string;
+    name: string;
+    text: string;
+  } | null>(null);
+  const [retireBusy, setRetireBusy] = React.useState(false);
+  const [retireError, setRetireError] = React.useState<string | null>(null);
+  /** The link field of each gone board, by `ats:token`. */
+  const [moveState, setMoveState] = React.useState<
+    Record<string, { error?: string; busy?: boolean }>
+  >({});
+  const resetToken = React.useRef(0);
   const [paletteJobs, setPaletteJobs] = React.useState<PaletteJob[]>([]);
   const [pendingJob, setPendingJob] = React.useState<{ id: string; token: number } | null>(null);
   const [tuneToken, setTuneToken] = React.useState(0);
   const liveRanking = React.useRef('');
   const scoringNote = React.useRef<string | undefined>(undefined);
+  const watchKind = React.useRef<'scout' | 'refresh'>('scout');
   const watched = React.useRef<number | null>(null);
 
   React.useEffect(() => setCard(scout), [scout]);
@@ -490,18 +533,25 @@ function ShellFrame({
           if (next) setCard(next);
           if (state.ok === false) {
             toast('Scout failed', {
-              description: state.error ?? next?.notices[0],
+              description: state.error ?? next?.notices[0]?.text,
               icon: <TriangleAlert className="text-danger" />,
             });
           } else {
             const boards = state.boardsOk ?? state.boards ?? next?.boards ?? 0;
             const found = state.inserted ?? next?.newLastRun ?? 0;
+            const closed = state.closed ?? 0;
+            const shortlisted = state.closedShortlisted ?? 0;
             const errors = state.errorCount ?? 0;
-            toast('Scout finished', {
-              description: `${formatCount(boards)} boards checked, ${formatCount(found)} new jobs${
+            const refreshed = watchKind.current === 'refresh';
+            toast(refreshed ? 'Listings refreshed' : 'Scout finished', {
+              description: `${formatCount(boards)} boards checked, ${formatCount(found)} new jobs, ${formatCount(closed)} closed, ${formatCount(shortlisted)} of them shortlisted${
                 errors ? `, ${formatCount(errors)} errors` : ''
               }${note ? ', scoring skipped (no API key)' : ''}`,
-              icon: <Radar className="text-strong" />,
+              icon: refreshed ? (
+                <RefreshCw className="text-strong" />
+              ) : (
+                <Radar className="text-strong" />
+              ),
             });
           }
           router.refresh();
@@ -521,34 +571,148 @@ function ShellFrame({
     };
   }, [running, router]);
 
-  const runScout = React.useCallback(() => {
-    if (running) {
-      toast('A scout is already running');
-      return;
-    }
-    setStarting(true);
-    setCard((c) =>
-      c
-        ? { ...c, running: true, progress: { done: 0, total: c.boards, found: 0, unit: 'Board' } }
-        : c,
-    );
-    void runScoutNow().then((result) => {
-      if (!result.ok) {
-        setStarting(false);
-        setCard((c) => (c ? { ...c, running: false, progress: null } : c));
-        toast('Scout failed', {
-          description: result.error,
-          icon: <TriangleAlert className="text-danger" />,
-        });
+  const startRun = React.useCallback(
+    (kind: 'scout' | 'refresh') => {
+      if (running) {
+        toast('A scout is already running');
         return;
       }
-      scoringNote.current = result.scoringNote;
-      watched.current = result.runId;
+      watchKind.current = kind;
       setStarting(true);
+      setCard((c) =>
+        c
+          ? { ...c, running: true, progress: { done: 0, total: c.boards, found: 0, unit: 'Board' } }
+          : c,
+      );
+      const start = kind === 'refresh' ? refreshListings : runScoutNow;
+      void start().then((result) => {
+        if (!result.ok) {
+          setStarting(false);
+          setCard((c) => (c ? { ...c, running: false, progress: null } : c));
+          toast(kind === 'refresh' ? 'Refresh failed' : 'Scout failed', {
+            description: result.error,
+            icon: <TriangleAlert className="text-danger" />,
+          });
+          return;
+        }
+        scoringNote.current = result.scoringNote;
+        watched.current = result.runId;
+        setStarting(true);
+      });
+    },
+    [running],
+  );
+  const runScout = React.useCallback(() => startRun('scout'), [startRun]);
+  const refresh = React.useCallback(() => startRun('refresh'), [startRun]);
+  const onNoticeAction = React.useCallback(
+    (index: number) => {
+      const notice = card?.notices[index];
+      if (!notice?.retire) return;
+      setRetireError(null);
+      setRetireBusy(false);
+      setRetire({ ...notice.retire, text: notice.text });
+    },
+    [card],
+  );
+  const confirmRetire = React.useCallback(async () => {
+    if (!retire) return;
+    setRetireBusy(true);
+    setRetireError(null);
+    const result = await turnOffBoard({ ats: retire.ats, token: retire.token });
+    if (!result.ok) {
+      setRetireBusy(false);
+      setRetireError(result.error);
+      return;
+    }
+    const name = result.name;
+    setRetireBusy(false);
+    setRetire(null);
+    const next = await fetchCard();
+    if (next) setCard(next);
+    router.refresh();
+    toast(`Turned off ${name}`, {
+      description: 'Later scouts skip this board. Jobs already stored stay.',
     });
-  }, [running]);
+  }, [retire, router]);
+
+  const finishMove = React.useCallback(
+    async (key: string, result: MoveBoardResult) => {
+      if (!result.ok) {
+        setMoveState((all) => ({ ...all, [key]: { error: result.error } }));
+        return;
+      }
+      setMoveState((all) => ({ ...all, [key]: {} }));
+      const next = await fetchCard();
+      if (next) setCard(next);
+      router.refresh();
+      toast(`Moved ${result.from} to ${result.to}`, {
+        description: 'The next scout fetches the new board. Its jobs keep their scores and status.',
+      });
+    },
+    [router],
+  );
+  const onCandidate = React.useCallback(
+    async (index: number, candidateIndex: number) => {
+      const notice = card?.notices[index];
+      const candidate = notice?.relocate?.candidates[candidateIndex];
+      if (!notice?.retire || !candidate) return;
+      const key = `${notice.retire.ats}:${notice.retire.token}`;
+      setMoveState((all) => ({ ...all, [key]: { busy: true } }));
+      const result = await moveBoardToCandidate({
+        ats: notice.retire.ats,
+        token: notice.retire.token,
+        to: { ats: candidate.ats, token: candidate.token },
+      });
+      await finishMove(key, result);
+    },
+    [card, finishMove],
+  );
+  const onLink = React.useCallback(
+    async (index: number, url: string) => {
+      const notice = card?.notices[index];
+      if (!notice?.retire) return;
+      const key = `${notice.retire.ats}:${notice.retire.token}`;
+      setMoveState((all) => ({ ...all, [key]: { busy: true } }));
+      const result = await moveBoardToLink({
+        ats: notice.retire.ats,
+        token: notice.retire.token,
+        url,
+      });
+      await finishMove(key, result);
+    },
+    [card, finishMove],
+  );
 
   const openMobileNav = React.useCallback(() => setMobileNav(true), []);
+  const openReset = React.useCallback(() => {
+    const token = resetToken.current + 1;
+    resetToken.current = token;
+    setMobileNav(false);
+    setResetPhase('confirm');
+    setResetError(null);
+    setResetPlan(null);
+    setResetBusy(true);
+    setResetOpen(true);
+    void loadResetPlan().then((result) => {
+      if (resetToken.current !== token) return;
+      setResetBusy(false);
+      if (!result.ok) setResetError(result.error);
+      else setResetPlan(result.plan);
+    });
+  }, []);
+  const confirmResetDialog = React.useCallback(async () => {
+    setResetBusy(true);
+    setResetError(null);
+    const result = await confirmReset();
+    setResetBusy(false);
+    if (!result.ok) {
+      setResetError(result.error);
+      return;
+    }
+    setResetPlan(result.after);
+    setResetPhase('done');
+    router.refresh();
+  }, [router]);
   const clearPending = React.useCallback(() => setPendingJob(null), []);
   const setLiveRanking = React.useCallback((next: string) => {
     liveRanking.current = next;
@@ -569,6 +733,7 @@ function ShellFrame({
     () => ({
       openMobileNav,
       runScout,
+      refreshListings: refresh,
       triage,
       pendingJob,
       clearPending,
@@ -579,6 +744,7 @@ function ShellFrame({
     [
       openMobileNav,
       runScout,
+      refresh,
       triage,
       pendingJob,
       clearPending,
@@ -719,7 +885,7 @@ function ShellFrame({
       ],
     },
   ];
-  const sections = sectionsFor(shown, query, logoEditor.missing ?? shown?.logos);
+  const sections = sectionsFor(shown, query, logoEditor.missing ?? shown?.logos, openReset);
   const footer = (c: boolean) =>
     card ? (
       <div className="space-y-2">
@@ -734,8 +900,27 @@ function ShellFrame({
               : null
           }
           onRun={runScout}
+          onRefresh={refresh}
           status={card.status}
-          notices={card.notices}
+          notices={card.notices.map((notice) => {
+            if (!notice.retire) return notice.text;
+            const action = `Turn off ${notice.retire.name}`;
+            if (!notice.relocate) return { text: notice.text, action };
+            return {
+              text: notice.text,
+              action,
+              board: notice.retire.name,
+              looked: notice.relocate.looked ?? undefined,
+              candidates: notice.relocate.candidates.map((c) => ({
+                label: c.label,
+                detail: c.detail,
+              })),
+              link: moveState[`${notice.retire.ats}:${notice.retire.token}`] ?? {},
+            };
+          })}
+          onNoticeAction={onNoticeAction}
+          onCandidate={onCandidate}
+          onLink={onLink}
         />
         {c ? null : (
           <div className="px-1 text-2xs text-fg-4">
@@ -817,9 +1002,81 @@ function ShellFrame({
               onOpenChange={setShortcutsOpen}
               groups={SHORTCUTS}
             />
+            <TurnOffBoardDialog
+              target={retire}
+              busy={retireBusy}
+              error={retireError}
+              onOpenChange={(open) => {
+                if (!open) setRetire(null);
+              }}
+              onConfirm={() => void confirmRetire()}
+            />
+            <ResetDialog
+              open={resetOpen}
+              onOpenChange={(open) => {
+                if (open) return;
+                resetToken.current += 1;
+                setResetOpen(false);
+              }}
+              plan={resetPlan}
+              phase={resetPhase}
+              busy={resetBusy}
+              error={resetError}
+              onConfirm={() => void confirmResetDialog()}
+            />
           </TooltipProvider>
         </LogoDomainProvider>
       </MotionConfig>
     </Ctx.Provider>
+  );
+}
+
+function TurnOffBoardDialog({
+  target,
+  busy,
+  error,
+  onOpenChange,
+  onConfirm,
+}: {
+  target: { name: string; text: string } | null;
+  busy: boolean;
+  error: string | null;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={target != null} onOpenChange={(next) => !busy && onOpenChange(next)}>
+      <DialogContent className="max-w-md">
+        <DialogTitle className="text-md font-semibold text-fg">
+          {target ? `Turn off ${target.name}?` : 'Turn off this board?'}
+        </DialogTitle>
+        <DialogDescription className="mt-2 text-sm text-fg-2">
+          {target?.text} Later scouts skip this board. Jobs already stored stay, including any you
+          shortlisted. To watch it again, set <span className="font-medium">active: true</span> for
+          this board in companies.yaml.
+        </DialogDescription>
+        {error ? <p className="mt-3 text-xs text-danger">{error}</p> : null}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={busy || target == null}
+            onClick={onConfirm}
+          >
+            {busy ? 'Turning off…' : 'Turn off'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

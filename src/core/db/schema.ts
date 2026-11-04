@@ -128,6 +128,7 @@ export const jobs = sqliteTable(
     scoreStateIdx: index('jobs_score_state_idx').on(t.scoreState),
     dedupeIdx: index('jobs_dedupe_idx').on(t.dedupeKey),
     companyIdx: index('jobs_company_idx').on(t.companyId),
+    duplicateOfIdx: index('jobs_duplicate_of_idx').on(t.duplicateOf),
   }),
 );
 
@@ -227,6 +228,7 @@ export const events = sqliteTable(
   (t) => ({
     typeIdx: index('events_type_idx').on(t.type),
     atIdx: index('events_at_idx').on(t.at),
+    jobIdx: index('events_job_idx').on(t.jobId),
   }),
 );
 
@@ -237,6 +239,8 @@ export const sourceUsage = sqliteTable(
     sourceName: text('source_name').notNull(),
     day: text('day').notNull(),
     calls: integer('calls').notNull().default(0),
+    /** Credits a metered call was charged. JobsPipe bills per new job, not per call. */
+    credits: integer('credits').notNull().default(0),
     estCostUsd: real('est_cost_usd').notNull().default(0),
   },
   (t) => ({

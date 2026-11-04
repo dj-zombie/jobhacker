@@ -3,8 +3,10 @@ import { isBrandfetchLoadError, logoDomain, standInFor } from './brandfetch.js';
 
 const ICON = 'https://cdn.brandfetch.io/domain/acme.com/w/128/h/128/fallback/404/type/icon?c=test';
 const SYMBOL =
-  'https://cdn.brandfetch.io/domain/acme.com/w/512/h/512/fallback/404/type/symbol?c=test';
+  'https://cdn.brandfetch.io/domain/acme.com/w/512/h/512/theme/light/fallback/404/type/symbol?c=test';
 const WORDMARK =
+  'https://cdn.brandfetch.io/domain/acme.com/h/72/theme/light/fallback/404/type/logo?c=test';
+const WORDMARK_DARK =
   'https://cdn.brandfetch.io/domain/acme.com/h/72/theme/dark/fallback/404/type/logo?c=test';
 
 describe('brandfetch stand-ins', () => {
@@ -30,7 +32,12 @@ describe('brandfetch stand-ins', () => {
     const wordmark = standInFor(WORDMARK);
     expect(wordmark.status).toBe(200);
     expect(String(wordmark.body)).toContain('viewBox="4 8 200 48"');
+    expect(String(wordmark.body)).toContain('fill="#ffffff"');
     expect(String(wordmark.body).toLowerCase()).not.toContain('acme');
+    const dark = standInFor(WORDMARK_DARK);
+    expect(dark.status).toBe(200);
+    expect(String(dark.body)).toContain('fill="#141418"');
+    expect(String(dark.body)).not.toContain('#ffffff');
   });
 
   it('404s the symbol and wordmark, but not the icon, for an icon-only domain', () => {

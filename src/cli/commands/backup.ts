@@ -1,9 +1,8 @@
-import { backupDatabase } from '../../core/db/backup.js';
+import { DEFAULT_BACKUP_DIR, backupDatabase } from '../../core/db/backup.js';
 import { DEFAULT_DB_PATH, createDb } from '../../core/db/client.js';
 import { systemClock } from '../../core/util/clock.js';
 
-/** Default directory for timestamped database backups. */
-export const DEFAULT_BACKUP_DIR = process.env.JOBHACKER_BACKUP_DIR ?? './data/backups';
+export { DEFAULT_BACKUP_DIR };
 
 /**
  * `backup` — copy the database to a timestamped file under `data/backups/`

@@ -65,13 +65,23 @@ export const BOARD_ATS = [
   'workday',
 ] as const;
 
-/** Search sources. `jobspipe` is configured but not called until it is enabled. */
+/** Search sources. */
 export const SEARCH_ATS = ['jsearch', 'jobspipe', 'hn'] as const;
 
 const searchSourceSchema = z
   .object({
     enabled: z.boolean(),
     monthly_call_budget: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/**
+ * JobsPipe is also capped in credits. The default keeps a `criteria.yaml`
+ * written before J16 valid. The object stays strict: an unknown key still fails.
+ */
+const jobspipeSourceSchema = searchSourceSchema
+  .extend({
+    monthly_credit_budget: z.number().int().nonnegative().default(0),
   })
   .strict();
 
@@ -85,7 +95,7 @@ export const sourcesSchema = z
     search: z
       .object({
         jsearch: searchSourceSchema,
-        jobspipe: searchSourceSchema,
+        jobspipe: jobspipeSourceSchema,
         hn: searchSourceSchema,
       })
       .strict(),
@@ -104,7 +114,7 @@ export const LEGACY_SOURCES: SourcesConfig = {
   boards: { enabled: ['greenhouse', 'lever', 'ashby'] },
   search: {
     jsearch: { enabled: false, monthly_call_budget: 0 },
-    jobspipe: { enabled: false, monthly_call_budget: 0 },
+    jobspipe: { enabled: false, monthly_call_budget: 0, monthly_credit_budget: 0 },
     hn: { enabled: false, monthly_call_budget: 0 },
   },
   workday: { enabled: false },

@@ -4,6 +4,12 @@ import { useReducedMotion } from "motion/react";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { CompanyLogo, companyInitial, companyTileColor } from "./company-logo";
+import {
+  type LogoTheme,
+  averageRelativeLuminance,
+  contrastingLogoTheme,
+  wordmarkBackdropLuminance,
+} from "./logo-contrast";
 
 export interface HeaderFact {
   label: string;
@@ -17,8 +23,9 @@ export interface HeaderFact {
  *
  * Each of the company's three Brandfetch logos goes where it reads best. The
  * icon is the cover, and blurred into the art's color field. The symbol, the
- * glyph with no tile, is drawn large over the field. The wordmark names the
- * company above the title. A company with no logo gets its monogram letter on
+ * glyph with no tile, is drawn large over the field, in the theme that contrasts
+ * with that field. The wordmark names the company above the title, in the theme
+ * that contrasts with the scrim it sits on. A company with no logo gets its monogram letter on
  * its tile color, and its name as text. Nothing else is fetched.
  *
  * The art's height is fixed, so an image that arrives late never moves the
@@ -32,8 +39,10 @@ export function CompanyHeader({
   badge,
   artUrl,
   coverUrl,
-  markUrl,
-  wordmarkUrl,
+  markOnDark,
+  markOnLight,
+  wordmarkOnDark,
+  wordmarkOnLight,
   onEditLogo,
   facts,
   actions,
@@ -51,10 +60,14 @@ export function CompanyHeader({
   artUrl?: string | null;
   /** 256 px icon for the cover. Falls back to `artUrl`. */
   coverUrl?: string | null;
-  /** The symbol drawn large on the art. Falls back to the cover. */
-  markUrl?: string | null;
-  /** The wordmark for dark backgrounds, above the title. Falls back to the name as text. */
-  wordmarkUrl?: string | null;
+  /** Light-colored symbol, drawn when the art is dark. Falls back to the cover. */
+  markOnDark?: string | null;
+  /** Dark-colored symbol, drawn when the art is light. */
+  markOnLight?: string | null;
+  /** Light-colored wordmark, for the dark scrim under the title. A 404 shows the name. */
+  wordmarkOnDark?: string | null;
+  /** Dark-colored wordmark, for a near-white scrim. A 404 shows the name. */
+  wordmarkOnLight?: string | null;
   /** When set, the cover is the button that opens the logo picker. */
   onEditLogo?: () => void;
   facts?: HeaderFact[];
@@ -71,6 +84,26 @@ export function CompanyHeader({
   const barRef = React.useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = React.useState(false);
   const cover = coverUrl ?? artUrl ?? null;
+  const art = artUrl ?? null;
+  const [sample, setSample] = React.useState<ArtSample | null>(null);
+  const sampled = sample?.src === art ? sample : null;
+  // No art to read: the light logo, which is what the dark scrim needs.
+  const pending = !!art && !sampled;
+  const symbolTheme = sampled?.symbol ?? "light";
+  const wordmarkTheme = sampled?.wordmark ?? "light";
+  const symbolUrl = pending ? null : assetUrl(symbolTheme, markOnDark, markOnLight);
+  const wordmarkUrl = pending ? null : assetUrl(wordmarkTheme, wordmarkOnDark, wordmarkOnLight);
+  const onArtLuminance = React.useCallback((src: string, luminance: number | null) => {
+    const artL = luminance ?? 0;
+    setSample((prev) => {
+      if (prev?.src === src) return prev;
+      return {
+        src,
+        symbol: contrastingLogoTheme(artL),
+        wordmark: contrastingLogoTheme(wordmarkBackdropLuminance(artL)),
+      };
+    });
+  }, []);
 
   React.useEffect(() => {
     const hero = heroRef.current;
@@ -94,7 +127,13 @@ export function CompanyHeader({
   return (
     <div className={cn("@container", className)}>
       <div className="relative isolate [--art-gap:136px] [--art-h:460px] @max-xl:[--art-gap:116px] @max-xl:[--art-h:420px] @max-md:[--art-gap:92px] @max-md:[--art-h:340px]">
-        <HeaderArt name={company} artUrl={artUrl} coverUrl={cover} symbolUrl={markUrl} />
+        <HeaderArt
+          name={company}
+          artUrl={artUrl}
+          coverUrl={cover}
+          symbolUrl={symbolUrl}
+          onArtLuminance={onArtLuminance}
+        />
 
         <div className="sticky top-0 z-20 h-0">
           <div
@@ -144,7 +183,12 @@ export function CompanyHeader({
             </div>
 
             <div className="flex min-w-0 flex-col gap-2.5 @max-md:gap-1.5 @max-md:self-center">
-              <CompanyName key={`${company}|${wordmarkUrl ?? ""}`} company={company} wordmarkUrl={wordmarkUrl} />
+              <CompanyName
+                key={`${company}|${wordmarkUrl ?? ""}`}
+                company={company}
+                wordmarkUrl={wordmarkUrl}
+                pending={pending}
+              />
               <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
                 <Title className="hero-text text-3xl font-semibold tracking-tight text-balance text-fg @max-xl:text-2xl @max-md:text-xl">
                   {title}
@@ -184,7 +228,16 @@ export function CompanyHeader({
  * The company line above the title: smaller than the title, and never wider than
  * the cover. Its height is fixed, so the wordmark arriving never moves the title.
  */
-function CompanyName({ company, wordmarkUrl }: { company: string; wordmarkUrl?: string | null }) {
+function CompanyName({
+  company,
+  wordmarkUrl,
+  pending,
+}: {
+  company: string;
+  wordmarkUrl?: string | null;
+  /** The art is still being read, so the name stays hidden until the wordmark is chosen. */
+  pending: boolean;
+}) {
   const [state, setState] = React.useState<"loading" | "ready" | "failed">("loading");
   const ref = React.useRef<HTMLImageElement>(null);
 
@@ -194,6 +247,8 @@ function CompanyName({ company, wordmarkUrl }: { company: string; wordmarkUrl?: 
   }, []);
 
   const showMark = !!wordmarkUrl && state !== "failed";
+  // A missing theme shows the name. The other theme is not tried: a clashing logo reads worse.
+  const showName = !pending && !showMark;
   return (
     <div className="flex h-9 min-w-0 items-center @max-xl:h-8 @max-md:h-6">
       {showMark ? (
@@ -210,11 +265,11 @@ function CompanyName({ company, wordmarkUrl }: { company: string; wordmarkUrl?: 
             state === "ready" ? "opacity-100" : "opacity-0",
           )}
         />
-      ) : (
+      ) : showName ? (
         <span className="hero-text truncate text-xl font-semibold tracking-tight text-fg/90 @max-xl:text-lg @max-md:text-base">
           {company}
         </span>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -237,11 +292,13 @@ function HeaderArt({
   artUrl,
   coverUrl,
   symbolUrl,
+  onArtLuminance,
 }: {
   name: string;
   artUrl?: string | null;
   coverUrl?: string | null;
   symbolUrl?: string | null;
+  onArtLuminance?: (src: string, luminance: number | null) => void;
 }) {
   const reduce = useReducedMotion();
   const art = artUrl ?? null;
@@ -254,6 +311,13 @@ function HeaderArt({
     setLayers((prev) => {
       const top = prev[prev.length - 1];
       if (top && top.name === name && top.art === art && top.cover === cover && top.symbol === symbol) return prev;
+      // The symbol arrives once the art has been read. Swap it on the current layer,
+      // so the field does not crossfade a second time.
+      if (top && top.name === name && top.art === art && top.cover === cover) {
+        const next = prev.slice();
+        next[next.length - 1] = { ...top, symbol };
+        return next;
+      }
       seq.current += 1;
       const next = { id: seq.current, name, art, cover, symbol };
       return reduce || !top ? [next] : [top, next];
@@ -270,6 +334,7 @@ function HeaderArt({
             layer={layer}
             entering={entering}
             onEntered={() => setLayers((prev) => (prev.length > 1 ? prev.slice(-1) : prev))}
+            onArtLuminance={entering || layers.length === 1 ? onArtLuminance : undefined}
           />
         );
       })}
@@ -285,12 +350,15 @@ function ArtFill({
   entering,
   onEntered,
   flat = false,
+  onArtLuminance,
 }: {
   layer: ArtLayer;
   entering: boolean;
   onEntered?: () => void;
   /** Only the color field: no mark and no letter. The compact bar uses it. */
   flat?: boolean;
+  /** Reads the blurred icon. Not set on the compact bar, or on an art that is fading out. */
+  onArtLuminance?: (src: string, luminance: number | null) => void;
 }) {
   // Each image that fails drops out on its own: a missing symbol falls back to the icon,
   // and only a missing icon turns the art into the monogram.
@@ -314,31 +382,27 @@ function ArtFill({
           background: `radial-gradient(120% 140% at 80% 10%, color-mix(in oklab, ${tile} 92%, white), ${tile} 38%, color-mix(in oklab, ${tile} 55%, black) 100%)`,
         }}
       />
-      {flat ? (
-        field ? (
-          <ArtImage
-            key={field}
-            src={field}
-            onFail={() => fail(field)}
-            className="inset-0 size-full scale-125 object-cover blur-2xl saturate-150"
-          />
-        ) : null
-      ) : field && mark ? (
+      {field ? (
         <>
           <ArtImage
             key={field}
             src={field}
+            company={layer.name}
             onFail={() => fail(field)}
+            onLuminance={onArtLuminance && field === layer.art ? onArtLuminance : undefined}
             className="inset-0 size-full scale-125 object-cover blur-2xl saturate-150"
           />
-          <ArtImage
-            key={`mark|${mark}`}
-            src={mark}
-            onFail={() => fail(mark)}
-            className="top-[-22%] right-[-10%] aspect-square h-[100%] w-auto max-w-none -rotate-12 opacity-90 mix-blend-overlay mask-radial-from-50% mask-radial-to-72% mask-b-from-45% mask-b-to-85% @max-md:right-[-24%]"
-          />
+          {!flat && mark ? (
+            <ArtImage
+              key={`mark|${mark}`}
+              src={mark}
+              company={layer.name}
+              onFail={() => fail(mark)}
+              className="top-[-22%] right-[-10%] aspect-square h-[100%] w-auto max-w-none -rotate-12 opacity-90 mix-blend-overlay mask-radial-from-50% mask-radial-to-72% mask-b-from-45% mask-b-to-85% @max-md:right-[-24%]"
+            />
+          ) : null}
         </>
-      ) : (
+      ) : flat ? null : (
         <span
           className="absolute top-[-8%] right-[4%] -rotate-12 select-none font-black leading-[0.8] text-white/50 mix-blend-overlay mask-b-from-40% mask-b-to-90% @max-md:right-[-6%]"
           style={{ fontSize: "calc(var(--art-h) * 0.8)" }}
@@ -350,25 +414,110 @@ function ArtFill({
   );
 }
 
-function ArtImage({ src, className, onFail }: { src: string; className?: string; onFail: () => void }) {
+function ArtImage({
+  src,
+  company,
+  className,
+  onFail,
+  onLuminance,
+}: {
+  src: string;
+  company: string;
+  className?: string;
+  onFail: () => void;
+  /** Set on the icon that paints the field. Null means the pixels could not be read. */
+  onLuminance?: (src: string, luminance: number | null) => void;
+}) {
+  const remote = src.startsWith("https:") || src.startsWith("http:");
+  const [plain, setPlain] = React.useState(false);
   const [ready, setReady] = React.useState(false);
   const ref = React.useRef<HTMLImageElement>(null);
+  const onFailRef = React.useRef(onFail);
+  const onLuminanceRef = React.useRef(onLuminance);
+  onFailRef.current = onFail;
+  onLuminanceRef.current = onLuminance;
+  // A remote icon is read through a CORS load. If that is refused, load it again
+  // without CORS so the art still paints, and the header uses the light logo.
+  const cross = !!onLuminance && remote && !plain;
+
+  const report = React.useCallback(
+    (img: HTMLImageElement) => {
+      const fn = onLuminanceRef.current;
+      if (!fn) return;
+      if (remote && plain) {
+        fn(src, null);
+        return;
+      }
+      fn(src, readArtLuminance(img, company));
+    },
+    [company, plain, remote, src],
+  );
 
   React.useEffect(() => {
     const img = ref.current;
-    if (img?.complete && img.naturalWidth > 0) setReady(true);
-  }, []);
+    if (!img?.complete || img.naturalWidth === 0) return;
+    setReady(true);
+    report(img);
+  }, [report]);
 
   return (
     <img
+      key={cross ? "cors" : "plain"}
       ref={ref}
       src={src}
       alt=""
       decoding="async"
       referrerPolicy="strict-origin-when-cross-origin"
-      onLoad={() => setReady(true)}
-      onError={onFail}
+      crossOrigin={cross ? "anonymous" : undefined}
+      onLoad={(e) => {
+        setReady(true);
+        report(e.currentTarget);
+      }}
+      onError={() => {
+        if (cross) {
+          setPlain(true);
+          return;
+        }
+        onFailRef.current();
+        onLuminanceRef.current?.(src, null);
+      }}
       className={cn("absolute transition-opacity duration-200", ready ? "" : "opacity-0!", className)}
     />
   );
+}
+
+type ArtSample = { src: string; symbol: LogoTheme; wordmark: LogoTheme };
+
+function assetUrl(theme: LogoTheme, onDark?: string | null, onLight?: string | null): string | null {
+  const url = theme === "light" ? onDark : onLight;
+  return url ?? null;
+}
+
+/** The icon, drawn over the company's tile color, reduced to one luminance. */
+function readArtLuminance(img: HTMLImageElement, company: string): number | null {
+  const size = 8;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.fillStyle = resolveTileColor(company);
+  ctx.fillRect(0, 0, size, size);
+  ctx.drawImage(img, 0, 0, size, size);
+  try {
+    return averageRelativeLuminance(ctx.getImageData(0, 0, size, size).data);
+  } catch {
+    return null;
+  }
+}
+
+function resolveTileColor(name: string): string {
+  if (typeof document === "undefined") return "black";
+  const probe = document.createElement("span");
+  probe.style.backgroundColor = companyTileColor(name);
+  document.body.append(probe);
+  const color = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  if (!color || color === "transparent" || color === "rgba(0, 0, 0, 0)") return "black";
+  return color;
 }

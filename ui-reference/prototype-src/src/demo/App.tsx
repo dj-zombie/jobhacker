@@ -4,10 +4,12 @@ import {
   BellRing,
   CircleDashed,
   FileText,
+  Eraser,
   Images,
   Inbox,
   Keyboard,
   Radar,
+  RefreshCw,
   Rows3,
   Send,
   SlidersHorizontal,
@@ -20,11 +22,14 @@ import {
   AppToaster,
   CommandPalette,
   CompanyLogo,
+  ResetDialog,
+  type ResetCounts,
   ScoutCard,
   ShortcutsDialog,
   toast,
   type NavSection,
   type PaletteGroup,
+  type ScoutNoticeItem,
   type ScoutStatus,
 } from "@/components/jobhacker";
 import { formatCompact, formatCount } from "@/lib/format";
@@ -46,18 +51,57 @@ interface DemoCtx {
   openPalette: () => void;
   openMobileNav: () => void;
   runScout: () => void;
+  refreshListings: () => void;
 }
 
 const Ctx = React.createContext<DemoCtx | null>(null);
 
 // `?scout=attention` or `?scout=failed` shows the scout card's warning states (frame 26).
+// `?scout=moved` is a gone board with a board found for it (frame 40); `?scout=gone` has none,
+// so the card offers the link field (frames 41 and 42).
 const SCOUT_DEMO = typeof location !== "undefined" ? new URLSearchParams(location.search).get("scout") : null;
-const SCOUT_STATE: { status: ScoutStatus; notices: string[] } =
+const GONE_LOOKED = "Looked on Lever, Ashby, SmartRecruiters, Breezy and Polymer, and in your search results";
+const SCOUT_STATE: { status: ScoutStatus; notices: ScoutNoticeItem[] } =
   SCOUT_DEMO === "failed"
     ? { status: "failed", notices: ["The 6:00 scout stopped: database is locked"] }
     : SCOUT_DEMO === "attention"
       ? { status: "attention", notices: ["JSearch is at its monthly budget", "3 boards failed in the last run"] }
-      : { status: "ok", notices: [] };
+      : SCOUT_DEMO === "moved"
+        ? {
+            status: "attention",
+            notices: [
+              {
+                text: "Brightline: the Ashby board returned 404. The listing page is gone.",
+                board: "Brightline",
+                looked:
+                  "Looked on Greenhouse, Lever, SmartRecruiters, Breezy and Polymer, and in your search results: found 1 board",
+                candidates: [{ label: "Ashby · brightline-labs", detail: "12 postings · Brightline Labs" }],
+                link: {},
+                action: "Turn off Brightline",
+              },
+            ],
+          }
+        : SCOUT_DEMO === "gone"
+          ? {
+              status: "attention",
+              notices: [
+                {
+                  text: "Northwind: the Greenhouse board returned 404. The listing page is gone.",
+                  board: "Northwind",
+                  looked: `${GONE_LOOKED}: no new board`,
+                  link: {},
+                  action: "Turn off Northwind",
+                },
+              ],
+            }
+          : { status: "ok", notices: [] };
+
+/** The demo's stand-in for the server's check: a known ATS host with a board token. */
+function demoBoardLink(url: string): boolean {
+  return /^https?:\/\/(job-boards(\.eu)?\.greenhouse\.io|boards\.greenhouse\.io|jobs(\.eu)?\.lever\.co|jobs\.ashbyhq\.com)\/[A-Za-z0-9]/.test(
+    url,
+  );
+}
 export function useDemo(): DemoCtx {
   const c = React.useContext(Ctx);
   if (!c) throw new Error("useDemo outside provider");
@@ -76,6 +120,32 @@ function useMediaQuery(q: string): boolean {
   }, [q]);
   return m;
 }
+
+const RESET_BEFORE: ResetCounts = {
+  jobs: 11374,
+  jobsWithApplication: 5,
+  jobsWithoutApplication: 11369,
+  jobScores: 1108,
+  applications: 5,
+  companyDomains: 48,
+  sourceUsage: 8,
+  companiesRemoved: 120,
+  runs: 12,
+  eventsRemoved: 640,
+};
+
+const RESET_AFTER: ResetCounts = {
+  jobs: 5,
+  jobsWithApplication: 5,
+  jobsWithoutApplication: 0,
+  jobScores: 0,
+  applications: 5,
+  companyDomains: 48,
+  sourceUsage: 8,
+  companiesRemoved: 0,
+  runs: 0,
+  eventsRemoved: 0,
+};
 
 export const SHORTCUTS = [
   {
@@ -122,7 +192,32 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const [mobileNav, setMobileNav] = React.useState(false);
+  const [resetOpen, setResetOpen] = React.useState(false);
+  const [resetPhase, setResetPhase] = React.useState<"confirm" | "done">("confirm");
+  const [scoutNotices, setScoutNotices] = React.useState<ScoutNoticeItem[]>(SCOUT_STATE.notices);
   const isMobile = useMediaQuery("(max-width: 767px)");
+  const moveBoard = (index: number, to: string) => {
+    setScoutNotices((all) => all.filter((_, i) => i !== index));
+    toast.success(`Moved to ${to}. Its jobs follow on the next scout.`);
+  };
+  const pasteLink = (index: number, url: string) => {
+    if (demoBoardLink(url)) {
+      moveBoard(index, url.replace(/^https?:\/\//, ""));
+      return;
+    }
+    setScoutNotices((all) =>
+      all.map((notice, i) =>
+        i === index && typeof notice !== "string"
+          ? {
+              ...notice,
+              link: {
+                error: "That link isn't a board JobHacker can read. Nothing changed.",
+              },
+            }
+          : notice,
+      ),
+    );
+  };
   const collapsed = useMediaQuery("(max-width: 1279px)");
 
   // Global shortcuts that work on every view.
@@ -163,6 +258,17 @@ export function App() {
         });
       }
     }, 110);
+  }, [state.scout]);
+
+  const refreshListings = React.useCallback(() => {
+    if (state.scout) {
+      toast("A scout is already running");
+      return;
+    }
+    toast("Listings refreshed", {
+      description: "0 boards checked, 0 new jobs, 0 closed, 0 of them shortlisted",
+      icon: <RefreshCw className="text-strong" />,
+    });
   }, [state.scout]);
 
   // Sidebar counts
@@ -212,7 +318,18 @@ export function App() {
     },
     {
       label: "Setup",
-      items: [{ href: "/companies", label: "Company logos", icon: Images, count: missingLogos }],
+      items: [
+        { href: "/companies", label: "Company logos", icon: Images, count: missingLogos },
+        {
+          label: "Start fresh",
+          icon: Eraser,
+          onSelect: () => {
+            setMobileNav(false);
+            setResetPhase("confirm");
+            setResetOpen(true);
+          },
+        },
+      ],
     },
   ];
 
@@ -225,8 +342,15 @@ export function App() {
         newLastRun={state.newLastRun}
         progress={state.scout}
         onRun={runScout}
-        status={SCOUT_STATE.status}
-        notices={SCOUT_STATE.notices}
+        onRefresh={refreshListings}
+        status={scoutNotices.length ? SCOUT_STATE.status : "ok"}
+        notices={scoutNotices}
+        onCandidate={(index, ci) => {
+          const notice = scoutNotices[index];
+          const candidate = typeof notice === "string" ? undefined : notice?.candidates?.[ci];
+          if (candidate) moveBoard(index, candidate.label);
+        }}
+        onLink={pasteLink}
       />
       {c ? null : (
         <div className="flex items-center justify-between px-1 text-2xs text-fg-4">
@@ -332,6 +456,7 @@ export function App() {
         openPalette: () => setPaletteOpen(true),
         openMobileNav: () => setMobileNav(true),
         runScout,
+        refreshListings,
       }}
     >
       <TooltipProvider>
@@ -391,6 +516,16 @@ export function App() {
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} groups={paletteGroups} />
         <LogoPickerDialog company={pickerCompany} />
         <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} groups={SHORTCUTS} />
+        <ResetDialog
+          open={resetOpen}
+          onOpenChange={(open) => {
+            setResetOpen(open);
+            if (!open) setResetPhase("confirm");
+          }}
+          plan={resetPhase === "done" ? RESET_AFTER : RESET_BEFORE}
+          phase={resetPhase}
+          onConfirm={() => setResetPhase("done")}
+        />
         <AppToaster />
       </TooltipProvider>
     </Ctx.Provider>

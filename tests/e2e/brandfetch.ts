@@ -9,9 +9,10 @@ import type { Page } from 'playwright-core';
  * loads a real logo. Answers take about 700ms. A few test domains 404 so the
  * tile falls back to its monogram. `BRANDFETCH_404`, a comma-separated list,
  * adds more domains that 404 for a screenshot.
- * J11's header also asks for `type/symbol` and `type/logo` (the wordmark). The
- * stand-ins answer with the same invented shape: white on transparent for a
- * symbol, and beside two bars for a wordmark, never a name. `BRANDFETCH_404_ASSETS`
+ * J11's header also asks for `type/symbol` and `type/logo` (the wordmark), each
+ * in `theme/light` and `theme/dark`. The stand-ins answer with the same invented
+ * shape: white on transparent for a light logo, near-black for a dark one, and
+ * beside two bars for a wordmark, never a name. `BRANDFETCH_404_ASSETS`
  * lists domains whose icon loads but whose symbol and wordmark 404.
  * J10's Brand Search gets canned results from `tests/fixtures/brandfetch/search.json`.
  * Pass `{ delayMs: 0 }` when a check needs images to finish before hydration.
@@ -35,12 +36,30 @@ function glyphOf(mark: Buffer): string {
     .trim();
 }
 
-function symbolSvg(mark: Buffer): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 8 48 48">${glyphOf(mark)}</svg>`;
+function symbolSvg(mark: Buffer, theme: string | null): string {
+  return paint(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 8 48 48">${glyphOf(mark)}</svg>`,
+    theme,
+  );
 }
 
-function wordmarkSvg(mark: Buffer): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 8 200 48">${glyphOf(mark)}<rect x="70" y="20" width="70" height="24" rx="6" fill="#ffffff"/><rect x="148" y="20" width="52" height="24" rx="6" fill="#ffffff"/></svg>`;
+function wordmarkSvg(mark: Buffer, theme: string | null): string {
+  return paint(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 8 200 48">${glyphOf(mark)}<rect x="70" y="20" width="70" height="24" rx="6" fill="#ffffff"/><rect x="148" y="20" width="52" height="24" rx="6" fill="#ffffff"/></svg>`,
+    theme,
+  );
+}
+
+/** `theme/dark` is the dark-colored logo. The stand-in glyphs are drawn white, so repaint them. */
+function paint(svg: string, theme: string | null): string {
+  if (theme !== 'dark') return svg;
+  return svg.replaceAll('#ffffff', '#141418').replaceAll('#FFFFFF', '#141418');
+}
+
+function assetTheme(url: string): string | null {
+  const path = new URL(url).pathname.split('/');
+  const at = path.indexOf('theme');
+  return at >= 0 ? (path[at + 1] ?? null) : null;
 }
 
 /** `icon`, `symbol` or `logo`, from a Logo CDN path's `/type/<type>` segment. */
@@ -107,10 +126,11 @@ export function standInFor(url: string): StandIn {
   if (TEST_ICON_ONLY.has(domain) || extraMisses('BRANDFETCH_404_ASSETS').has(domain)) {
     return { status: 404, contentType: 'text/plain', body: 'missing' };
   }
+  const theme = assetTheme(url);
   return {
     status: 200,
     contentType: 'image/svg+xml',
-    body: type === 'symbol' ? symbolSvg(mark) : wordmarkSvg(mark),
+    body: type === 'symbol' ? symbolSvg(mark, theme) : wordmarkSvg(mark, theme),
   };
 }
 

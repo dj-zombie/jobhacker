@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { join, win32 } from 'node:path';
 import type { Browser } from 'playwright-core';
 import { SafePage } from './safe-page.js';
 
@@ -12,18 +13,37 @@ import { SafePage } from './safe-page.js';
  */
 
 export const CHROME_DEBUG_ENDPOINT = 'http://127.0.0.1:9222';
-export const CHROME_USER_DATA_DIR = `${homedir()}/.jobhacker-chrome`;
+export const CHROME_USER_DATA_DIR = join(homedir(), '.jobhacker-chrome');
 
-/** The macOS candidates for a normal Chrome binary. */
-export const CHROME_CANDIDATES = [
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
-];
+/** Where a normal Chrome or Chromium is installed on each platform. */
+export function chromeCandidates(
+  platform: NodeJS.Platform = process.platform,
+  env: Record<string, string | undefined> = process.env,
+): string[] {
+  if (platform === 'win32') {
+    return [env.ProgramFiles, env['ProgramFiles(x86)'], env.LOCALAPPDATA]
+      .filter((dir): dir is string => typeof dir === 'string' && dir.length > 0)
+      .map((dir) => win32.join(dir, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+  }
+  if (platform === 'linux') {
+    return [
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/snap/bin/chromium',
+    ];
+  }
+  return [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+  ];
+}
 
-/** Resolve a Chrome binary path (override → env → standard macOS locations). */
+/** Resolve a Chrome binary path (override → env → this platform's standard locations). */
 export function resolveChrome(override?: string): string | undefined {
-  const candidates = [override, process.env.JOBHACKER_CHROME_PATH, ...CHROME_CANDIDATES].filter(
+  const candidates = [override, process.env.JOBHACKER_CHROME_PATH, ...chromeCandidates()].filter(
     (p): p is string => typeof p === 'string' && p.length > 0,
   );
   return candidates.find((p) => existsSync(p));
@@ -31,7 +51,7 @@ export function resolveChrome(override?: string): string | undefined {
 
 /** The command `pnpm cli chrome` runs; shown to the human when Chrome is down. */
 export function chromeLaunchCommand(chromePath?: string): string {
-  const bin = chromePath ?? CHROME_CANDIDATES[0];
+  const bin = chromePath ?? chromeCandidates()[0] ?? 'chrome';
   return `"${bin}" --remote-debugging-port=9222 --user-data-dir="${CHROME_USER_DATA_DIR}"`;
 }
 

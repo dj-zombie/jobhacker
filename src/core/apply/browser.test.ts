@@ -1,6 +1,38 @@
 import type { Browser } from 'playwright-core';
 import { describe, expect, it, vi } from 'vitest';
-import { BrowserError, connectChrome } from './browser.js';
+import { BrowserError, chromeCandidates, connectChrome } from './browser.js';
+
+describe('chromeCandidates', () => {
+  it('looks in the standard install folders on Windows', () => {
+    const env = {
+      ProgramFiles: 'C:\\Program Files',
+      'ProgramFiles(x86)': 'C:\\Program Files (x86)',
+      LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
+    };
+    expect(chromeCandidates('win32', env)).toEqual([
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Users\\tester\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
+    ]);
+  });
+
+  it('skips a Windows folder whose variable is unset', () => {
+    expect(chromeCandidates('win32', { ProgramFiles: 'C:\\Program Files' })).toEqual([
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    ]);
+  });
+
+  it('looks for Chrome and Chromium on Linux', () => {
+    expect(chromeCandidates('linux', {})).toContain('/usr/bin/google-chrome');
+    expect(chromeCandidates('linux', {})).toContain('/usr/bin/chromium');
+  });
+
+  it('keeps the macOS app bundles first on a Mac', () => {
+    expect(chromeCandidates('darwin', {})[0]).toBe(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    );
+  });
+});
 
 /**
  * connectChrome's recovery path (STATUS Round 5 verify, Bug A): when the

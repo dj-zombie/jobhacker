@@ -1,4 +1,4 @@
-import { ConfigError, loadAllConfig } from '../../core/config/load.js';
+import { ConfigError, DEFAULT_CONFIG_DIR, loadAllConfig } from '../../core/config/load.js';
 import { createDb } from '../../core/db/client.js';
 import { createAnthropicLlm } from '../../core/llm/anthropic.js';
 import { LlmError } from '../../core/llm/types.js';
@@ -8,6 +8,7 @@ import {
   runScout,
   sourceKeysFromEnv,
 } from '../../core/pipeline/scout.js';
+import { DEFAULT_CACHE_PATH } from '../../core/sources/discover.js';
 import { systemClock } from '../../core/util/clock.js';
 import { createHttp } from '../../core/util/http.js';
 import { createLogger } from '../../core/util/logger.js';
@@ -38,6 +39,7 @@ export async function scoutCommand(options: { score?: boolean } = {}): Promise<v
       preferences: config.preferences,
       scoring,
       sourceKeys: sourceKeysFromEnv(process.env),
+      upkeep: { dir: DEFAULT_CONFIG_DIR, cachePath: DEFAULT_CACHE_PATH },
     });
     console.log(formatScoutSummary(result));
     if (!result.ok) process.exitCode = 1;

@@ -48,7 +48,12 @@ import {
   scoreRunState,
 } from '../../core/pipeline/score-run.js';
 import { type ScoringKey, scoringInputs } from '../../core/pipeline/score.js';
-import { ABANDONED_AFTER_MS, scoutCard } from '../../core/pipeline/scout-card.js';
+import {
+  ABANDONED_AFTER_MS,
+  scoutCard,
+  scoutCheckedWords,
+  scoutStaleBanner,
+} from '../../core/pipeline/scout-card.js';
 import { parseScoutProgress } from '../../core/pipeline/scout-progress.js';
 import {
   type ApplicationList,
@@ -69,6 +74,7 @@ import {
 } from '../../core/pipeline/triage.js';
 import { type WhyReport, explainJob } from '../../core/pipeline/why.js';
 import { attachmentName } from '../../core/prep/render.js';
+import { atsLabel } from '../../core/sources/detect.js';
 import { systemClock } from '../../core/util/clock.js';
 import { normalizeCompanyName } from '../../core/util/hash.js';
 import { activityGroups, shortDate } from './activity.js';
@@ -631,6 +637,7 @@ function rowData(
     seenAt: row.firstSeenAt,
     prescore: row.prescore,
     status: row.status,
+    closed: row.closed,
     areas:
       row.areas.length > 1
         ? [...row.areas].sort((a, b) => order.indexOf(a) - order.indexOf(b))
@@ -696,10 +703,14 @@ export function getTriagePage(config: OkConfig, view: TriageView): TriagePageDat
         const rows = triageRows(db, systemClock, view, config.key).map((r) =>
           rowData(r, order, domains),
         );
+        const stale = scoutStaleBanner(db, systemClock);
         const live = liveScoringRun(db, systemClock);
         return {
           ...base,
           rows,
+          banner: stale
+            ? { checkedOn: stale.checkedAt ? scoutCheckedWords(stale.checkedAt) : null }
+            : null,
           scoring:
             view === 'unscored'
               ? scoringSummary(computeFunnel(db, systemClock, config.criteria, config.key))
@@ -708,7 +719,7 @@ export function getTriagePage(config: OkConfig, view: TriageView): TriagePageDat
             live?.kind === 'score' ? (scoreRunState(db, systemClock, live.id) ?? null) : null,
         };
       }),
-    { ...base, rows: [], scoring: null, liveRun: null },
+    { ...base, rows: [], banner: null, scoring: null, liveRun: null },
   );
 }
 
@@ -725,6 +736,7 @@ export function getTriageDetail(config: OkConfig, jobId: number): TriageDetailDa
           row: rowData(triageRowOf(d), order, loadDomainMap(db, systemClock)),
           employment: d.job.employmentType ?? '',
           postedAt: d.job.postedAt,
+          lastSeenAt: d.job.lastSeenAt,
           description: d.job.descriptionText ?? '',
           postingUrl: d.job.url,
           summary: s?.summary ?? null,
@@ -766,7 +778,23 @@ export function getScoutCard(config: UiConfig): ScoutCardView | null {
         const last = card.lastRun;
         return {
           status: card.status,
-          notices: card.notices,
+          notices: card.notices.map((notice) => ({
+            text: notice.text,
+            ...(notice.retire ? { retire: notice.retire } : {}),
+            ...(notice.relocate
+              ? {
+                  relocate: {
+                    looked: notice.relocate.looked,
+                    candidates: notice.relocate.candidates.map((c) => ({
+                      ats: c.ats,
+                      token: c.token,
+                      label: `${atsLabel(c.ats)} · ${c.token}`,
+                      detail: `${c.postings.toLocaleString('en-US')} ${c.postings === 1 ? 'posting' : 'postings'} · ${c.name}`,
+                    })),
+                  },
+                }
+              : {}),
+          })),
           running: card.running,
           lastRunLabel: runLabel(last?.finishedAt ?? last?.startedAt, systemClock.nowMs()),
           boards: card.boards,
@@ -802,6 +830,8 @@ export function getScoutRun(runId: number): ScoutRunView | null {
           ok: run.finishedAt === null ? null : run.ok,
           error: run.error,
           inserted: num('inserted'),
+          closed: num('closed'),
+          closedShortlisted: num('closed_shortlisted'),
           boardsOk: num('boards_ok'),
           boards: num('boards'),
           errorCount: Array.isArray(stats?.errors) ? stats.errors.length : null,

@@ -21,6 +21,10 @@ export interface DemoJob {
   ageHours: number;
   prescore: number;
   state: TriageState;
+  /** The sources no longer list it. Shortlist keeps the row. */
+  closed?: boolean;
+  /** Last confirmed, in the same words as postedLabel. Defaults in toDetail. */
+  confirmedLabel?: string;
   /** Scored jobs have dims. Unscored jobs carry `pending` dims used when scoring is simulated. */
   dims?: Dims;
   pending?: Dims;

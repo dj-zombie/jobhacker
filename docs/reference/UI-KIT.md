@@ -188,7 +188,7 @@ Another approach is fine if it meets the same acceptance (J5, J6). Record it in 
 
 J5 and J6 did not build that server action. Triage writes don't call `revalidatePath` (D96): the view pushes its counts, and `GET /api/triage-counts` confirms them. While the sliders differ from the saved ranking, that GET includes the live weights and bands (D114). A debounced `getShellCounts` action would wait behind any other server action in the same tab.
 
-**`ScoutCard`** takes `status` (`ok`, `attention` or `failed`) and `notices` (a list of short strings), so the sidebar can say when the unattended scout needs Kris. See frame `26-scout-attention-1440.png`.
+**`ScoutCard`** takes `status` (`ok`, `attention` or `failed`) and `notices` (a short string, or `{ text, action }` when that line has a button), so the sidebar can say when the unattended scout needs Kris and, when the app passes an action, offer it. See frame `26-scout-attention-1440.png`, whose notices are strings and so have no button.
 
 **On phones**, below 768px, the sidebar is hidden. It opens as a drawer from the menu button in the page header: see `mobileNav` in `App.tsx`, and frame `21-phone-nav.png`.
 
@@ -200,7 +200,7 @@ The kit's types are in `components/jobhacker/types.ts`. The prototype's `src/dem
 |---|---|
 | `JobSummary.company` | `companies.name` |
 | `JobSummary.logoUrl` | Built in the client with `logoUrl()` from `company_domains.domain` (matched on the normalized company name) and the client id passed once. Null, so a monogram, when there is no domain, the state is `none`, or the client id is unset |
-| `JobDetailData.logoTileUrl`, `.logoSymbolUrl`, `.logoWordmarkUrl` | The header's cover (256 px icon), symbol and wordmark, built in the client by `headerLogosFor()` (`src/app/lib/triage.ts`) from the same row as `logoUrl` (§ Company logos). Null when there is no domain, the row is `none`, or the client id is unset. A `typed` row's symbol and wordmark are always null |
+| `JobDetailData.logoTileUrl`, `.logoSymbolOnDarkUrl`, `.logoSymbolOnLightUrl`, `.logoWordmarkOnDarkUrl`, `.logoWordmarkOnLightUrl` | The header's cover (256 px icon) and both themes of the symbol and the wordmark, built in the client by `headerLogosFor()` (`src/app/lib/triage.ts`) from the same row as `logoUrl` (§ Company logos). The header picks the theme that contrasts with the art. Null when there is no domain, the row is `none`, or the client id is unset. A `typed` row's symbol and wordmark are always null |
 | `.place` | The first non-remote row in `job_areas`, with its label from `criteria.yaml`, e.g. `{ id: "portland", label: "Portland" }`. Otherwise `null` |
 | `.location`, `.remote` | `jobs.location_raw`, `jobs.remote_type` |
 | `.compLabel` | `comp_min`/`comp_max`/`comp_currency`, formatted like `$215–400k`. Omit when unknown |
@@ -315,10 +315,10 @@ From J9, `src` is a Brandfetch Logo CDN URL, which Kris's browser loads straight
 - **The picker** (J10) searches Brandfetch's Brand Search from the browser, in a client container, since kit components don't fetch. It keeps only the domain and brand id Kris picks.
 - **The detail header** (J11, D112, D113) is `CompanyHeader`, shared by `JobDetail` (the triage pane, the phone sheet, `/job/[id]`) and, from J7, the application workspace. It uses four Logo CDN URLs, all with `fallback/404`, built by core's `companyHeaderLogos()` (`src/core/brand/site-icon.ts`):
   - **the art:** the 128 px icon, the list tile's own URL, so it's already cached, blurred into a color field
-  - **the symbol:** `type/symbol` at 512 px, drawn large and tilted at the top right of the art. With no symbol, the icon takes its place
+  - **the symbol:** `type/symbol` at 512 px, drawn large and tilted at the top right of the art. `theme/light` (a light glyph) when the art is dark, `theme/dark` (a dark glyph) when the art is light. With no symbol in the chosen theme, the icon takes its place. The other theme is not requested
   - **the cover:** the 256 px icon, in the large tile that opens J10's picker
-  - **the company line:** the wordmark, `type/logo` with `theme/dark` at 72 px high, above the title, shown as served. It is never wider than the cover and is always smaller than the title. Its `alt` is the company's name
-  - **Fallbacks:** each URL fails on its own. When the symbol fails, the art keeps the icon, and when the wordmark fails, the line shows the name as text. When the icon fails, or there's no domain, the art is the monogram's color and letter. A `typed` row (J10) uses its `mark_url` for the art and the cover, and has no symbol or wordmark. A `none` row has no logos at all.
+  - **the company line:** the wordmark, `type/logo` at 72 px high, above the title, shown as served. `theme/light` unless the art behind the scrim is near white, in which case `theme/dark`. It is never wider than the cover and is always smaller than the title. Its `alt` is the company's name. A 404 shows the name, not the other theme
+  - **Fallbacks:** each URL fails on its own. When the symbol fails, the art keeps the icon, and when the wordmark fails, the line shows the name as text. When the icon cannot be read, the light logo is used. When the icon fails, or there's no domain, the art is the monogram's color and letter. A `typed` row (J10) uses its `mark_url` for the art and the cover, and has no symbol or wordmark. A `none` row has no logos at all.
   - **Speed:** the triage container builds the URLs from the row it already has, so the next header renders the moment J or K is pressed. The art has a fixed height (460, 420 and 340 px at 1440, 1024 and phone widths). Images fade in as they arrive, and nothing waits for one. The art crossfades in 200 ms, or instantly with reduced motion. Once the title scrolls away, a compact bar sticks to the top.
   - The art is decoration, with an empty `alt`.
 

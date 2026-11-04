@@ -62,6 +62,7 @@ function listedOf(row: ListedJob): ListedJob {
     prescore: row.prescore,
     scoreState: row.scoreState,
     areas: row.areas,
+    closed: row.closed,
   };
 }
 
@@ -95,11 +96,24 @@ function loadRows(
 
 /** Every row of a view, before Where and Seen. Unordered: the UI ranks them. */
 export function triageRows(db: Db, clock: Clock, view: TriageView, key: ScoringKey): TriageRow[] {
+  const since = newCutoff(clock);
+  if (view === 'shortlist') {
+    const open = loadRows(db, clock, key, { statuses: ['shortlisted'] }, true).filter((row) =>
+      inView(view, row, since),
+    );
+    const closed = loadRows(
+      db,
+      clock,
+      key,
+      { statuses: ['shortlisted'], includeClosedShortlist: true },
+      true,
+    ).filter((row) => row.closed && inView(view, row, since));
+    return [...open, ...closed];
+  }
   const filters: ListFilters = {
-    statuses: view === 'shortlist' ? ['shortlisted'] : UNTRIAGED,
+    statuses: UNTRIAGED,
     ...(view === 'new' ? { seenWithinHours: NEW_WITHIN_HOURS } : {}),
   };
-  const since = newCutoff(clock);
   return loadRows(db, clock, key, filters, view !== 'top').filter((row) =>
     inView(view, row, since),
   );
@@ -126,6 +140,13 @@ export function triageCounts(
     { statuses: [...UNTRIAGED, 'shortlisted'] },
     true,
   ).filter((row) => inWhere(row.areas, options.where));
+  const closedShort = loadRows(
+    db,
+    clock,
+    options.key,
+    { statuses: ['shortlisted'], includeClosedShortlist: true },
+    true,
+  ).filter((row) => row.closed && inWhere(row.areas, options.where));
   const since = newCutoff(clock);
   const rows = (view: TriageView) => all.filter((row) => inView(view, row, since));
   const ranked = rankJobs(
@@ -136,7 +157,7 @@ export function triageCounts(
   return {
     matches: ranked.filter((row) => row.verdict !== 'no').length,
     fresh: rows('new').length,
-    shortlist: rows('shortlist').length,
+    shortlist: rows('shortlist').length + closedShort.length,
     unscored: rows('unscored').length,
   };
 }
@@ -231,6 +252,7 @@ export function triageRowOf(d: TriageDetail): TriageRow {
     areas: d.areas,
     dims: d.score ? dimScores(d.score.dimensions) : null,
     stale: d.stale,
+    closed: job.closedAt !== null,
   };
 }
 

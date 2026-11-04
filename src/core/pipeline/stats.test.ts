@@ -34,7 +34,7 @@ const CRITERIA: Criteria = {
     boards: { enabled: ['greenhouse', 'ashby'] },
     search: {
       jsearch: { enabled: true, monthly_call_budget: 200 },
-      jobspipe: { enabled: false, monthly_call_budget: 0 },
+      jobspipe: { enabled: false, monthly_call_budget: 0, monthly_credit_budget: 0 },
       hn: { enabled: true, monthly_call_budget: 100 },
     },
     workday: { enabled: false },
@@ -230,7 +230,7 @@ describe('usefulness stats', () => {
       expect(stats.spend).toMatchObject({ month: '2026-10', modelCalls: 3 });
       expect(stats.spend.sources).toEqual([
         { name: 'jsearch', enabled: true, calls: 2, budget: 200 },
-        { name: 'jobspipe', enabled: false, calls: 0, budget: 0 },
+        { name: 'jobspipe', enabled: false, calls: 0, budget: 0, credits: 0, creditBudget: 0 },
         { name: 'hn', enabled: true, calls: 0, budget: 100 },
       ]);
 
@@ -245,6 +245,7 @@ describe('usefulness stats', () => {
         'scout',
         'new',
         'search',
+        'links',
         'scored',
         'matches',
         'where',
@@ -257,11 +258,60 @@ describe('usefulness stats', () => {
       ]);
       expect(text).toContain('where     not set up');
       expect(text).toContain('in where  not set up');
+      expect(text).toContain('links     not read');
       expect(text).toContain('ashby 80% filled over 1 form');
       expect(text).toContain('(1 of 2 reports predate the self-ID count)');
       expect(text).toContain('jsearch 2/200 calls · jobspipe off · hn 0/100 calls');
 
       expect(() => sqlite.prepare('delete from jobs').run()).toThrow(/readonly/i);
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  it('counts linked boards companies.yaml does not list, and unreadable links by ATS', () => {
+    const path = seedDatabase();
+    const writable = createDb(path);
+    writable.db
+      .update(jobs)
+      .set({
+        url: 'https://jobs.ashbyhq.com/beta/123',
+        descriptionText: [
+          'Apply at https://jobs.ashbyhq.com/newco/9a8b or https://job-boards.greenhouse.io/missed/jobs/1.',
+          'Also https://boards.greenhouse.io/emptyco and https://jobs.lever.co/off-ats.',
+          'Old link: https://apply.workable.com/acme-w/j/ABC and https://acme.wd1.myworkdayjobs.com/x',
+        ].join('\n'),
+      })
+      .where(eq(jobs.title, 'From search'))
+      .run();
+    writable.sqlite.close();
+
+    const { db, sqlite } = openDbReadonly(path);
+    try {
+      const stats = computeStats({
+        db,
+        clock: fixedClock(NOW),
+        criteria: CRITERIA,
+        current: CURRENT,
+        links: {
+          listed: [{ ats: 'ashby', token: 'beta' }],
+          cache: { 'greenhouse:missed': 'miss', 'greenhouse:emptyco': 'empty' },
+        },
+      });
+      // lever is not enabled in CRITERIA, so its link is not counted.
+      expect(stats.links).toEqual({
+        unlisted: 3,
+        toProbe: 1,
+        missed: 1,
+        empty: 1,
+        unreadable: [
+          { ats: 'workable', count: 1 },
+          { ats: 'workday', count: 1 },
+        ],
+      });
+      expect(renderStats(stats)).toContain(
+        'links     3 boards linked from search hits not in companies.yaml: 1 to probe · 1 missed · 1 empty · unreadable: workable 1 · workday 1',
+      );
     } finally {
       sqlite.close();
     }

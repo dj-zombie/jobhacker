@@ -10,6 +10,9 @@ import type { Clock } from '../util/clock.js';
  * is written to `destDir/jobhacker-<timestamp>.db`.
  */
 
+/** Default directory for timestamped database backups. */
+export const DEFAULT_BACKUP_DIR = process.env.JOBHACKER_BACKUP_DIR ?? './data/backups';
+
 /** A filesystem-safe timestamp like `2026-10-23T011600Z` from an ISO string. */
 export function backupTimestamp(iso: string): string {
   return iso

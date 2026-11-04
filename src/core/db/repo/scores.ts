@@ -49,6 +49,12 @@ export interface ListFilters {
   statuses?: readonly JobStatus[];
   /** Keep jobs in any of these areas (`job_areas`). Absent or empty: anywhere. A view filter only. */
   areas?: readonly string[];
+  /**
+   * Shortlist only. Also include a job with status `shortlisted` and `closed_at` set,
+   * even though the closed gate failed. Duplicates stay hidden. Other views leave this off,
+   * so `visible()` is unchanged for them.
+   */
+  includeClosedShortlist?: boolean;
 }
 
 /** The job fields every list row carries. */
@@ -69,6 +75,8 @@ export interface ListedJob {
   scoreState: ScoreState;
   /** Its `job_areas` rows, unordered. Empty: in none of Kris's places. */
   areas: string[];
+  /** The posting is closed. Shortlist still shows it; the other views do not. */
+  closed: boolean;
 }
 
 /** A job with a dimension score for its current text: input to `rankJobs`. */
@@ -136,6 +144,22 @@ const visible = (): SQL[] => [
   sql`json_extract(${jobs.gateResult}, '$.passed') = 1`,
 ];
 
+/**
+ * Shortlist. Open jobs still have to pass the gates. A shortlisted job with
+ * `closed_at` set is included even though that gate failed. Duplicates stay hidden.
+ */
+const shortlistVisible = (): SQL[] => [
+  isNull(jobs.duplicateOf),
+  sql`(
+    (${jobs.closedAt} is null and json_extract(${jobs.gateResult}, '$.passed') = 1)
+    or (${jobs.status} = 'shortlisted' and ${jobs.closedAt} is not null)
+  )`,
+];
+
+function visibility(filters: ListFilters): SQL[] {
+  return filters.includeClosedShortlist ? shortlistVisible() : visible();
+}
+
 const listedJobColumns = {
   jobId: jobs.id,
   company: companies.name,
@@ -155,6 +179,9 @@ const listedJobColumns = {
     string[]
   >`coalesce((select group_concat(area) from job_areas where job_areas.job_id = ${jobs.id}), '')`.mapWith(
     (value: unknown) => (typeof value === 'string' && value ? value.split(',') : []),
+  ),
+  closed: sql<number>`case when ${jobs.closedAt} is not null then 1 else 0 end`.mapWith(
+    (value: unknown) => value === 1 || value === true,
   ),
 };
 
@@ -253,7 +280,7 @@ export function scoresRepo(db: Db, clock: Clock) {
         .from(jobScores)
         .innerJoin(jobs, eq(jobScores.jobId, jobs.id))
         .innerJoin(companies, eq(jobs.companyId, companies.id))
-        .where(and(latestDimensionScore(), ...visible(), ...filterConditions(filters)))
+        .where(and(latestDimensionScore(), ...visibility(filters), ...filterConditions(filters)))
         .orderBy(asc(jobs.id))
         .all();
       const out: ScoredRow[] = [];
@@ -273,7 +300,13 @@ export function scoresRepo(db: Db, clock: Clock) {
         .select(listedJobColumns)
         .from(jobs)
         .innerJoin(companies, eq(jobs.companyId, companies.id))
-        .where(and(sql`not ${hasDimensionScore()}`, ...visible(), ...filterConditions(filters)))
+        .where(
+          and(
+            sql`not ${hasDimensionScore()}`,
+            ...visibility(filters),
+            ...filterConditions(filters),
+          ),
+        )
         .orderBy(
           sql`case ${jobs.scoreState}
             when 'run_cap' then 0

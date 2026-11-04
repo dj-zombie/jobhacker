@@ -10,6 +10,7 @@ import {
   JobList,
   type JobSummary,
   Kbd,
+  ListingsBanner,
   PageHeader,
   PlaceFilter,
   Segmented,
@@ -53,6 +54,7 @@ import {
   MobileNavButton,
   type TriageCountsView,
   usePaletteTarget,
+  useRefreshListings,
   useRunScout,
   useTriageStore,
 } from '../../components/app-shell.js';
@@ -183,6 +185,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
   const params = useSearchParams();
   const store = useTriageStore();
   const runScout = useRunScout();
+  const refreshListings = useRefreshListings();
   const isMobile = useMediaQuery('(max-width: 767px)');
   const foundLogos = useLogoDomains();
   const logoEdits = useLogoEditor();
@@ -468,6 +471,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
       ...headerLogosFor(selRow, data.logoClientId),
       employment: '…',
       postedLabel: '…',
+      confirmedLabel: '…',
     };
   }, [selRow, loaded, ranking, places, data.nowMs, data.logoClientId, logoEdits.edits]);
 
@@ -977,6 +981,10 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
           />
         ) : null}
       </PageHeader>
+
+      {data.banner ? (
+        <ListingsBanner checkedOn={data.banner.checkedOn} onRefresh={refreshListings} />
+      ) : null}
 
       {view === 'unscored' && data.scoring ? (
         <UnscoredHero

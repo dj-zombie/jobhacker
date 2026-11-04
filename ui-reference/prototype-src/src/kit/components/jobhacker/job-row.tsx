@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatAge } from "@/lib/format";
 import { CompanyLogo } from "./company-logo";
 import { ScorePill } from "./score";
-import { PlaceChip, PrescoreMeter, RemoteChip, Sep, StateChip } from "./chips";
+import { ClosedChip, PlaceChip, PrescoreMeter, RemoteChip, Sep, StateChip } from "./chips";
 import type { Density, JobSummary, TriageAction } from "./types";
 
 function QuickAction({
@@ -79,6 +79,7 @@ export function JobRow({
           </span>
           {compact ? <span className="hidden min-w-0 shrink truncate text-xs text-fg-3 @md:inline">{job.company}</span> : null}
           <StateChip state={job.state} />
+          {job.closed ? <ClosedChip /> : null}
         </div>
         {compact ? null : (
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-fg-3">

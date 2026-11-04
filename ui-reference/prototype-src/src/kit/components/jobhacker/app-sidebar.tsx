@@ -9,14 +9,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { BrandMark } from "./brand-mark";
 import { Kbd } from "./kbd";
 
-export interface NavItem {
-  href: string;
+/** A link, or a button that opens something in place. A button has no route. */
+export type NavItem = {
   label: string;
   icon: LucideIcon;
   count?: number | string;
   /** Draw attention to the count, e.g. follow-ups due. */
   countTone?: "default" | "brand" | "maybe" | "danger";
-}
+} & ({ href: string; onSelect?: undefined } | { onSelect: () => void; href?: undefined });
 
 export interface NavSection {
   label: string;
@@ -119,18 +119,14 @@ export function AppSidebar({
               {section.items.map((item) => {
                 const active = item.href === activeHref;
                 const Icon = item.icon;
-                const link = (
-                  <Link
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    aria-label={collapsed ? item.label : undefined}
-                    className={cn(
-                      "group relative flex h-8 items-center gap-2.5 rounded-md text-sm font-medium outline-none transition-colors max-md:min-h-10",
-                      "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand-hi",
-                      collapsed ? "mx-auto w-9 justify-center" : "px-2",
-                      active ? "text-fg" : "text-fg-2 hover:bg-surface-1 hover:text-fg",
-                    )}
-                  >
+                const className = cn(
+                  "group relative flex h-8 items-center gap-2.5 rounded-md text-sm font-medium outline-none transition-colors max-md:min-h-10",
+                  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand-hi",
+                  collapsed ? "mx-auto w-9 justify-center" : "w-full px-2",
+                  active ? "text-fg" : "text-fg-2 hover:bg-surface-1 hover:text-fg",
+                );
+                const body = (
+                  <>
                     {active ? (
                       <motion.span
                         layoutId="sidebar-active"
@@ -150,20 +146,39 @@ export function AppSidebar({
                         {item.count}
                       </span>
                     ) : null}
+                  </>
+                );
+                const control = item.onSelect ? (
+                  <button
+                    type="button"
+                    onClick={item.onSelect}
+                    aria-label={collapsed ? item.label : undefined}
+                    className={className}
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <Link
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    aria-label={collapsed ? item.label : undefined}
+                    className={className}
+                  >
+                    {body}
                   </Link>
                 );
                 return (
-                  <li key={item.href}>
+                  <li key={item.href ?? item.label}>
                     {collapsed ? (
                       <Tooltip>
-                        <TooltipTrigger asChild>{link}</TooltipTrigger>
+                        <TooltipTrigger asChild>{control}</TooltipTrigger>
                         <TooltipContent side="right">
                           {item.label}
                           {item.count != null ? <span className="ml-2 tnum text-fg-3">{item.count}</span> : null}
                         </TooltipContent>
                       </Tooltip>
                     ) : (
-                      link
+                      control
                     )}
                   </li>
                 );

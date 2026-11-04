@@ -50,26 +50,32 @@ export function demoLogoUrl(company: string): string | null {
   return mark(bg);
 }
 
-/** The same companies' stand-in symbol: the shape alone, white on transparent, as Brandfetch's `type=symbol`. */
-export function demoSymbolUrl(company: string): string | null {
+/** The same companies' stand-in symbol: the shape alone, as Brandfetch's `type=symbol`. */
+export function demoSymbolUrl(company: string, ink: "white" | "black" = "white"): string | null {
   if (!demoLogoUrl(company)) return null;
-  const xml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 44 44">${GLYPHS[hash(company) % GLYPHS.length]}</svg>`;
+  const xml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 44 44">${glyph(company, ink)}</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(xml)}`;
 }
 
 /**
- * The same companies' stand-in wordmark, as Brandfetch's `type=logo&theme=dark`:
+ * The same companies' stand-in wordmark, as Brandfetch's `type=logo`:
  * the stand-in shape, then the name set in a system font. Never a real wordmark.
+ * White ink is the light logo. Black ink is the dark logo.
  */
-export function demoWordmarkUrl(company: string): string | null {
+export function demoWordmarkUrl(company: string, ink: "white" | "black" = "white"): string | null {
   if (!demoLogoUrl(company)) return null;
   const name = company.toLowerCase();
   const textW = Math.round(name.length * 21);
   const w = 64 + 10 + textW;
-  const glyph = GLYPHS[hash(company) % GLYPHS.length];
+  const fill = ink === "black" ? "#141418" : "#ffffff";
   const safe = name.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const xml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} 64"><g transform="translate(-6 0)">${glyph}</g><text x="66" y="46" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="42" letter-spacing="-1" textLength="${textW}" lengthAdjust="spacingAndGlyphs" fill="#ffffff">${safe}</text></svg>`;
+  const xml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} 64"><g transform="translate(-6 0)">${glyph(company, ink)}</g><text x="66" y="46" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="42" letter-spacing="-1" textLength="${textW}" lengthAdjust="spacingAndGlyphs" fill="${fill}">${safe}</text></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(xml)}`;
+}
+
+function glyph(company: string, ink: "white" | "black"): string {
+  const shape = GLYPHS[hash(company) % GLYPHS.length] ?? "";
+  return ink === "black" ? shape.replaceAll("#ffffff", "#141418") : shape;
 }
 
 const GLYPHS = [

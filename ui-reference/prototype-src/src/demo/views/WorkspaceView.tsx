@@ -139,8 +139,10 @@ export function WorkspaceView({ appId }: { appId: string }) {
           titleAs="h1"
           artUrl={demoLogoUrl(job.company)}
           coverUrl={demoLogoUrl(job.company)}
-          markUrl={demoSymbolUrl(job.company)}
-          wordmarkUrl={demoWordmarkUrl(job.company)}
+          markOnDark={demoSymbolUrl(job.company, "white")}
+          markOnLight={demoSymbolUrl(job.company, "black")}
+          wordmarkOnDark={demoWordmarkUrl(job.company, "white")}
+          wordmarkOnLight={demoWordmarkUrl(job.company, "black")}
           onEditLogo={() => openLogoPicker(job.company)}
           contentClassName="mx-auto max-w-4xl"
           facts={[

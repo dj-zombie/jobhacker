@@ -28,6 +28,7 @@ import {
   JobDetail,
   JobList,
   Kbd,
+  ListingsBanner,
   PageHeader,
   PlaceFilter,
   Segmented,
@@ -74,8 +75,11 @@ function byRank(a: JobSummary, b: JobSummary) {
   return a.id < b.id ? -1 : 1;
 }
 
+const LISTINGS_FRAME =
+  typeof location !== "undefined" && new URLSearchParams(location.search).get("frame") === "refresh";
+
 export function TriageView({ view }: { view: View }) {
-  const { state, dispatch, isMobile, openMobileNav, runScout } = useDemo();
+  const { state, dispatch, isMobile, openMobileNav, runScout, refreshListings } = useDemo();
   const { weights, thresholds } = state;
   const meta = VIEW_META[view];
 
@@ -465,6 +469,10 @@ export function TriageView({ view }: { view: View }) {
           />
         ) : null}
       </PageHeader>
+
+      {LISTINGS_FRAME ? (
+        <ListingsBanner checkedOn="26 Oct 2026" onRefresh={refreshListings} />
+      ) : null}
 
       {view === "unscored" ? <UnscoredHero onScore={scoreNext} /> : null}
 

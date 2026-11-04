@@ -49,7 +49,8 @@ export function jsearchUrl(query: string, page: number): string {
 
 export function parseJsearch(raw: unknown): SearchHit[] {
   const body = responseSchema.safeParse(raw);
-  if (!body.success || !body.data.data) return [];
+  if (!body.success) throw new Error('JSearch response did not parse');
+  if (body.data.data === undefined) throw new Error('JSearch response had no listings');
   const hits: SearchHit[] = [];
   for (const item of body.data.data) {
     const job = jobSchema.safeParse(item);

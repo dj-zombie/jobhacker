@@ -15,6 +15,9 @@ function recordingHttp(body: unknown): { http: Http; urls: string[] } {
   return {
     urls,
     http: {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson(url: string) {
         urls.push(url);
         return body;

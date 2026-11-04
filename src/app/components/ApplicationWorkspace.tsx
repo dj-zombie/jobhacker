@@ -331,8 +331,10 @@ export function ApplicationWorkspace({
           titleAs="h1"
           artUrl={artUrl}
           coverUrl={headerLogos.logoTileUrl}
-          markUrl={headerLogos.logoSymbolUrl}
-          wordmarkUrl={headerLogos.logoWordmarkUrl}
+          markOnDark={headerLogos.logoSymbolOnDarkUrl}
+          markOnLight={headerLogos.logoSymbolOnLightUrl}
+          wordmarkOnDark={headerLogos.logoWordmarkOnDarkUrl}
+          wordmarkOnLight={headerLogos.logoWordmarkOnLightUrl}
           onEditLogo={() => logoEditor.openPicker(company)}
           contentClassName="mx-auto max-w-4xl"
           facts={[

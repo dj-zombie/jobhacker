@@ -44,4 +44,15 @@ describe('companiesRepo.deactivateMissing (Known issue [1])', () => {
     expect(repo.get('hn', 'example')?.active).toBe(true);
     expect(repo.get('jsearch', 'example')?.active).toBe(true);
   });
+
+  it('sets active on one board and leaves a missing board alone', () => {
+    const made = createMigratedTestDb();
+    sqlite = made.sqlite;
+    const repo = companiesRepo(made.db, fixedClock('2026-10-23T00:00:00.000Z'));
+    repo.upsert({ name: 'A', ats: 'greenhouse', token: 'a', active: true, tags: [] });
+    expect(repo.setActive('greenhouse', 'a', false)).toBe(true);
+    expect(repo.get('greenhouse', 'a')?.active).toBe(false);
+    expect(repo.setActive('greenhouse', 'a', false)).toBe(true);
+    expect(repo.setActive('lever', 'missing', false)).toBe(false);
+  });
 });

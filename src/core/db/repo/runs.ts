@@ -5,12 +5,44 @@ import { type Run, type RunKind, runs } from '../schema.js';
 
 export type { RunKind };
 
+/** A run with no finish time this long after its start crashed; it is not still running. */
+export const ABANDONED_AFTER_MS = 3 * 60 * 60 * 1000;
+
 /**
  * Repository for the `runs` table — the bookkeeping row that wraps each
  * pipeline execution (ARCHITECTURE § Flows).
  */
 export function runsRepo(db: Db, clock: Clock) {
   return {
+    /** The scout still going, if any. An unfinished scout older than `ABANDONED_AFTER_MS` crashed. */
+    liveScout(): Run | undefined {
+      const open = db
+        .select()
+        .from(runs)
+        .where(and(eq(runs.kind, 'scout'), isNull(runs.finishedAt)))
+        .orderBy(desc(runs.id))
+        .all();
+      const now = clock.nowMs();
+      return open.find((run) => now - Date.parse(run.startedAt) < ABANDONED_AFTER_MS);
+    },
+
+    /**
+     * Set some keys of a finished run's stats, leaving the rest. `boards:relocate` writes its
+     * result onto the scout it read, so the card shows it without a new scout.
+     */
+    mergeStats(id: number, patch: Record<string, unknown>): void {
+      const run = db.select().from(runs).where(eq(runs.id, id)).get();
+      if (!run) throw new Error(`run ${id} not found`);
+      const base =
+        run.stats && typeof run.stats === 'object' && !Array.isArray(run.stats)
+          ? (run.stats as Record<string, unknown>)
+          : {};
+      db.update(runs)
+        .set({ stats: { ...base, ...patch } })
+        .where(eq(runs.id, id))
+        .run();
+    },
+
     /** Open a run and return its id. */
     start(kind: RunKind): number {
       const row = db

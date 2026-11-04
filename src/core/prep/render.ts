@@ -1,6 +1,6 @@
-import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { resolveChrome } from '../apply/browser.js';
 import type { Profile } from '../config/schemas.js';
 import type { TailoredResultBullet } from './tailor.js';
 import { resumeDocument } from './templates/resume.js';
@@ -111,19 +111,6 @@ export async function renderResumePdf(
 export async function writeResumeHtml(html: string, outPath: string): Promise<void> {
   await mkdir(dirname(outPath), { recursive: true });
   await writeFile(outPath, html, 'utf8');
-}
-
-const CHROME_CANDIDATES = [
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
-];
-
-function resolveChrome(override?: string): string | undefined {
-  const candidates = [override, process.env.JOBHACKER_CHROME_PATH, ...CHROME_CANDIDATES].filter(
-    (p): p is string => typeof p === 'string' && p.length > 0,
-  );
-  return candidates.find((p) => existsSync(p));
 }
 
 // ---------------------------------------------------------------------------

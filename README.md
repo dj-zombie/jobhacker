@@ -25,11 +25,37 @@ It is built to be safe by design:
 
 ---
 
+## What's worth a look
+
+If you're here to read the code rather than run it:
+
+- **It can't submit.** Every browser action goes through `src/core/apply/safe-page.ts`, which
+  has no submit method and refuses to click anything that reads as submit, apply or send.
+  `src/core/apply/guard.test.ts` fails the build if any other apply file touches the page directly.
+- **It can't make things up.** `src/core/prep/grounding.ts` rejects a tailored resume bullet that
+  doesn't trace to a real profile bullet, or that adds a number or a technology the source
+  doesn't have. Self-identification answers come only from the profile, through a deterministic
+  mapper (`src/core/apply/self-id.ts`). The model never sees those fields.
+- **Model output is untrusted input.** Every response is parsed against a Zod schema, retried
+  once with the errors, then recorded as a failure (`src/core/llm/types.ts`).
+- **No job disappears silently.** Four gates are the only exclusions. Everything else is a scored
+  dimension, and `pnpm cli funnel` and `pnpm cli why <jobId>` account for every job.
+- **Layering.** All logic lives in `src/core` and takes its dependencies as parameters. The
+  Next.js app and the CLI are thin layers over it. `docs/ARCHITECTURE.md` walks through it.
+- **Tests.** About 900 Vitest tests run against recorded fixtures and a fake model, never
+  the network.
+
+---
+
 ## Requirements
 
-- **macOS** (the apply-assist and scheduler instructions are macOS-specific)
-- **Node.js 22+** and **pnpm 9+** (`corepack enable` will provide pnpm)
-- **Google Chrome** — only needed for the "apply-assist" step that fills forms
+- **macOS, Windows or Linux**
+- **Node.js 22+** and **pnpm 9+** (`corepack enable` will provide pnpm). If `pnpm install` can't
+  download a prebuilt `better-sqlite3` for your machine, it compiles one, which needs build
+  tools: Visual Studio Build Tools ("Desktop development with C++") on Windows, or
+  `build-essential` and `python3` on Linux.
+- **Google Chrome or Chromium** — for filling forms and rendering the resume PDF. JobHacker looks
+  in the usual install folders. If yours is elsewhere, set `JOBHACKER_CHROME_PATH` in `.env`.
 - An **Anthropic API key** — only needed for LLM scoring and writing materials
 
 ---
@@ -53,13 +79,26 @@ cp config/companies.example.yaml config/companies.yaml
 cp .env.example                  .env
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+Copy-Item config/profile.example.yaml   config/profile.yaml
+Copy-Item config/criteria.example.yaml  config/criteria.yaml
+Copy-Item config/preferences.example.md config/preferences.md
+Copy-Item config/companies.example.yaml config/companies.yaml
+Copy-Item .env.example                  .env
+```
+
+The example criteria names two places, Portland and Phoenix, plus Remote. Replace them with
+your own in `config/criteria.yaml` (see `docs/reference/PLACES.md`).
+
 | File | What it is |
 |---|---|
 | `config/profile.yaml` | **The only source of truth about you** — contact, experience bullets (with stable `id`s), skills, standard answers. Fill it in with facts you can stand behind. |
 | `config/preferences.md` | **What you want, in your own words**: roles, places, pay, what excites you, dealbreakers. The scoring model reads it as prose; the prescore uses lexical terms only to order spend, never to exclude. Editing it re-scores jobs on the next score run. |
 | `config/criteria.yaml` | Mechanical settings only: the hard gates (`max_age_days`, `company_blocklist`), six ranking weights, strong/maybe bands, the per-run scoring cap (`max_new_scores_per_run`) and models. The compatibility `prescore_floor` field must stay `0` until removed from the schema. Have a v1 file with title/location keyword lists? Run `pnpm cli config:migrate`: it keeps the old file as `criteria.v1.yaml` and drafts `preferences.md` from your keywords. |
 | `config/companies.yaml` | The ATS boards to scout. Add one easily with `pnpm cli companies:add <careers-url>` (it detects the ATS and verifies the board). |
-| `.env` | `ANTHROPIC_API_KEY=…` (required for scoring/prep), plus optional `DATABASE_PATH` and `CHROME_CDP_URL` defaults. |
+| `.env` | `ANTHROPIC_API_KEY=…` (required for scoring/prep). Optional: `DATABASE_PATH`, `JOBHACKER_CHROME_PATH` (where Chrome is, if it isn't found), `JOBHACKER_CDP_ENDPOINT` (the dedicated Chrome's debugging address, `http://127.0.0.1:9222` by default), and the search-source keys listed in `.env.example`. |
 
 Each example file documents its own schema inline. Validate your config any time with:
 
@@ -125,6 +164,9 @@ For the apply step you run a dedicated Chrome with remote debugging once per ses
 ```sh
 pnpm cli chrome    # launches the dedicated Chrome profile for apply-assist
 ```
+
+Press `?` in the app for the keyboard shortcuts. They show ⌘ as on a Mac; on Windows and Linux
+use Ctrl instead (Ctrl+K opens search).
 
 ---
 
@@ -196,11 +238,15 @@ Run scout unattended with **launchd** (recommended on macOS):
    Run once immediately: `launchctl kickstart gui/$(id -u)/space.jobhacker.scout`.
    Remove it: `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/space.jobhacker.scout.plist`.
 
-As an alternative, **cron** (`crontab -e`) — daily at 07:30:
+On **Linux**, or as an alternative on macOS, use **cron** (`crontab -e`) — daily at 07:30:
 
 ```cron
 30 7 * * * mkdir -p /ABSOLUTE/PATH/TO/REPO/data/logs && cd /ABSOLUTE/PATH/TO/REPO && export PATH="$(dirname /ABSOLUTE/PATH/TO/pnpm):$PATH" && /ABSOLUTE/PATH/TO/pnpm cli scout >> data/logs/cron.log 2>&1
 ```
+
+On **Windows**, use **Task Scheduler**: Create Basic Task, pick Daily and the time you want, then
+Start a program. Program: `cmd.exe`. Arguments: `/c pnpm cli scout`. Start in: the full path to
+this folder. Scout writes its own log to `data\logs\`.
 
 Scout exits non-zero on failure, and its last-run status appears in the UI header.
 

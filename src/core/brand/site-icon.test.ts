@@ -84,20 +84,30 @@ describe('site icons', () => {
 describe('companyHeaderLogos', () => {
   const clientId = 'client';
 
-  it('gives a Brandfetch company its cover, symbol and dark wordmark', () => {
+  it('gives a Brandfetch company its cover and both logo themes', () => {
     expect(
       companyHeaderLogos({ domain: 'acme.com', source: 'found', markUrl: null, clientId }),
     ).toEqual({
       cover:
         'https://cdn.brandfetch.io/domain/acme.com/w/256/h/256/fallback/404/type/icon?c=client',
-      symbol:
-        'https://cdn.brandfetch.io/domain/acme.com/w/512/h/512/fallback/404/type/symbol?c=client',
-      wordmark:
+      symbolOnDark:
+        'https://cdn.brandfetch.io/domain/acme.com/w/512/h/512/theme/light/fallback/404/type/symbol?c=client',
+      symbolOnLight:
+        'https://cdn.brandfetch.io/domain/acme.com/w/512/h/512/theme/dark/fallback/404/type/symbol?c=client',
+      wordmarkOnDark:
+        'https://cdn.brandfetch.io/domain/acme.com/h/72/theme/light/fallback/404/type/logo?c=client',
+      wordmarkOnLight:
         'https://cdn.brandfetch.io/domain/acme.com/h/72/theme/dark/fallback/404/type/logo?c=client',
     });
   });
 
   it('gives a typed domain only its site icon, and a no-logo company nothing', () => {
+    const noMarks = {
+      symbolOnDark: null,
+      symbolOnLight: null,
+      wordmarkOnDark: null,
+      wordmarkOnLight: null,
+    };
     expect(
       companyHeaderLogos({
         domain: 'ptown.tech',
@@ -105,14 +115,20 @@ describe('companyHeaderLogos', () => {
         markUrl: 'https://www.ptown.tech/icon.svg',
         clientId,
       }),
-    ).toEqual({ cover: 'https://www.ptown.tech/icon.svg', symbol: null, wordmark: null });
+    ).toEqual({ cover: 'https://www.ptown.tech/icon.svg', ...noMarks });
     expect(
       companyHeaderLogos({ domain: 'acme.com', source: 'none', markUrl: null, clientId }),
-    ).toEqual({ cover: null, symbol: null, wordmark: null });
+    ).toEqual({ cover: null, ...noMarks });
   });
 
   it('has nothing without a domain or a client id', () => {
-    const none = { cover: null, symbol: null, wordmark: null };
+    const none = {
+      cover: null,
+      symbolOnDark: null,
+      symbolOnLight: null,
+      wordmarkOnDark: null,
+      wordmarkOnLight: null,
+    };
     expect(companyHeaderLogos({ domain: null, source: null, markUrl: null, clientId })).toEqual(
       none,
     );

@@ -16,7 +16,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { PlaceChip, RemoteChip, StateChip } from "./chips";
+import { ClosedChip, PlaceChip, RemoteChip, StateChip } from "./chips";
 import { CompanyHeader, type HeaderFact } from "./company-header";
 import { Collapsible, DescriptionBlocks } from "./description";
 import { DimensionBreakdown } from "./dimension-breakdown";
@@ -166,6 +166,7 @@ export function JobDetail({
       ),
     },
     { label: "Posted", value: <span className="truncate">{job.postedLabel}</span> },
+    { label: "Last confirmed", value: <span className="truncate">{job.confirmedLabel}</span> },
   ];
 
   return (
@@ -174,11 +175,18 @@ export function JobDetail({
         <CompanyHeader
           company={job.company}
           title={job.title}
-          badge={<StateChip state={job.state} />}
+          badge={
+            <>
+              <StateChip state={job.state} />
+              {job.closed ? <ClosedChip /> : null}
+            </>
+          }
           artUrl={job.logoUrl}
           coverUrl={job.logoTileUrl}
-          markUrl={job.logoSymbolUrl}
-          wordmarkUrl={job.logoWordmarkUrl}
+          markOnDark={job.logoSymbolOnDarkUrl}
+          markOnLight={job.logoSymbolOnLightUrl}
+          wordmarkOnDark={job.logoWordmarkOnDarkUrl}
+          wordmarkOnLight={job.logoWordmarkOnLightUrl}
           onEditLogo={onEditLogo}
           facts={facts}
           actions={actions(false)}

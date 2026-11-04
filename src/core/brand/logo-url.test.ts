@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  averageRelativeLuminance,
+  contrastingLogoTheme as kitContrastingLogoTheme,
+  wordmarkBackdropLuminance as kitWordmarkBackdrop,
+} from '../../components/jobhacker/logo-contrast.js';
+import {
   LOGO_HEADER_PX,
   LOGO_TILE_PX,
   brandAssetUrl,
   brandSearchUrl,
+  contrastingLogoTheme,
   logoUrl,
+  wordmarkBackdropLuminance,
 } from './logo-url.js';
 
 const clientId = 'test-client';
@@ -45,16 +52,51 @@ describe('logoUrl', () => {
     expect(logoUrl({ domain: 'stripe.com', clientId, size: 512 })).toBeNull();
   });
 
-  it('builds the header symbol and dark wordmark URLs, with fallback/404', () => {
-    expect(brandAssetUrl({ domain: 'linear.app', clientId, type: 'symbol' })).toBe(
-      'https://cdn.brandfetch.io/domain/linear.app/w/512/h/512/fallback/404/type/symbol?c=test-client',
+  it('builds the header symbol and wordmark in the theme it is given, with fallback/404', () => {
+    expect(brandAssetUrl({ domain: 'linear.app', clientId, type: 'symbol', theme: 'light' })).toBe(
+      'https://cdn.brandfetch.io/domain/linear.app/w/512/h/512/theme/light/fallback/404/type/symbol?c=test-client',
     );
-    expect(brandAssetUrl({ domain: 'linear.app', clientId, type: 'wordmark' })).toBe(
+    expect(brandAssetUrl({ domain: 'linear.app', clientId, type: 'symbol', theme: 'dark' })).toBe(
+      'https://cdn.brandfetch.io/domain/linear.app/w/512/h/512/theme/dark/fallback/404/type/symbol?c=test-client',
+    );
+    expect(
+      brandAssetUrl({ domain: 'linear.app', clientId, type: 'wordmark', theme: 'light' }),
+    ).toBe(
+      'https://cdn.brandfetch.io/domain/linear.app/h/72/theme/light/fallback/404/type/logo?c=test-client',
+    );
+    expect(brandAssetUrl({ domain: 'linear.app', clientId, type: 'wordmark', theme: 'dark' })).toBe(
       'https://cdn.brandfetch.io/domain/linear.app/h/72/theme/dark/fallback/404/type/logo?c=test-client',
     );
-    expect(brandAssetUrl({ domain: 'Linear.app', clientId, type: 'symbol' })).toBeNull();
-    expect(brandAssetUrl({ domain: null, clientId, type: 'wordmark' })).toBeNull();
-    expect(brandAssetUrl({ domain: 'linear.app', clientId: '', type: 'wordmark' })).toBeNull();
+    expect(
+      brandAssetUrl({ domain: 'Linear.app', clientId, type: 'symbol', theme: 'light' }),
+    ).toBeNull();
+    expect(brandAssetUrl({ domain: null, clientId, type: 'wordmark', theme: 'dark' })).toBeNull();
+    expect(
+      brandAssetUrl({ domain: 'linear.app', clientId: '', type: 'wordmark', theme: 'light' }),
+    ).toBeNull();
+  });
+
+  it('picks the light logo on a dark backdrop and the dark logo on a light one', () => {
+    expect(contrastingLogoTheme(0)).toBe('light');
+    expect(contrastingLogoTheme(0.17)).toBe('light');
+    expect(contrastingLogoTheme(0.19)).toBe('dark');
+    expect(contrastingLogoTheme(1)).toBe('dark');
+    expect(contrastingLogoTheme(Number.NaN)).toBe('light');
+    expect(contrastingLogoTheme(-1)).toBe('light');
+    expect(contrastingLogoTheme(2)).toBe('dark');
+    // The wordmark's scrim is mostly the panel, so only a near-white art wants a dark wordmark.
+    expect(contrastingLogoTheme(wordmarkBackdropLuminance(0))).toBe('light');
+    expect(contrastingLogoTheme(wordmarkBackdropLuminance(0.5))).toBe('light');
+    expect(contrastingLogoTheme(wordmarkBackdropLuminance(1))).toBe('dark');
+    for (const n of [0, 0.1, 0.17, 0.19, 0.5, 0.9, 1, Number.NaN, -1, 2]) {
+      expect(kitContrastingLogoTheme(n)).toBe(contrastingLogoTheme(n));
+      expect(kitWordmarkBackdrop(n)).toBe(wordmarkBackdropLuminance(n));
+    }
+    expect(averageRelativeLuminance(new Uint8ClampedArray([0, 0, 0, 255]))).toBeLessThan(0.01);
+    expect(averageRelativeLuminance(new Uint8ClampedArray([255, 255, 255, 255]))).toBeGreaterThan(
+      0.99,
+    );
+    expect(averageRelativeLuminance(new Uint8ClampedArray())).toBe(0);
   });
 
   it('builds a Brand Search URL with a limit of 5', () => {

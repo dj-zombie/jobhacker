@@ -38,7 +38,7 @@ Prices and terms were taken from each vendor's public pages on 2026-10-23. Check
 | SmartRecruiters | none | Public Posting API, per company |
 | Breezy | none | Public JSON feed, per account |
 | Polymer | none | Public JSON feed, per account |
-| Workable | per-account key | Job Board API |
+| Workable | per-account key | Job Board API. A key reads only its own account: on 2026-11-03 Kris's key saw 1 account, and other employers' boards answered `422 Request subdomain does not match account subdomain` |
 | Teamtailor | per-tenant key | JSON:API. Some career sites expose a keyless feed |
 | **Workday** | none | `/wday/cxs/<tenant>/<site>/jobs`. **The one approved exception (D62)** |
 
@@ -60,11 +60,11 @@ Prices and terms were taken from each vendor's public pages on 2026-10-23. Check
 | DataForSEO | Google Jobs | pay as you go | — |
 | **HN "Who's Hiring"** | Algolia HN API, the monthly thread's top-level comments | free | — |
 
-**Aggregators** come pre-deduplicated across many boards. They're options, and none is built:
+**Aggregators** come pre-deduplicated across many boards. JobsPipe is built (J16). The others are options, and none of them is built:
 
 | Provider | Coverage | Price | Free tier |
 |---|---|---|---|
-| JobsPipe | 30+ sources, including LinkedIn, Indeed, Workday, Greenhouse and Lever | $49/mo for 25k jobs | 1,000 credits |
+| JobsPipe | 30+ sources, including LinkedIn, Indeed, Workday, Greenhouse and Lever | 1 credit per new job per calendar month, not per call. Seeker $19.60/mo for 10k, Builder $49/mo for 25k (its docs, 2026-11-03) | 1,000 credits once, never refilled; 25 jobs a call, 2 requests a second. Kris has a free-plan key |
 | TheirStack | 225M records, ~305k a day | from $49/mo | 50 company + 200 API credits/mo |
 | Fantastic.jobs | 200k+ career sites | $95/mo for 20k, up to $900/mo for 500k | 7-day trial |
 | JobDataLake | 1.8M+ jobs, 25k+ companies | $50 for 100k credits | 1,000 credits |
@@ -78,7 +78,7 @@ Prices and terms were taken from each vendor's public pages on 2026-10-23. Check
 
 1. **Every board source, plus discovery.** They're free, and they're the best data: structured, with full descriptions and a real apply URL that can be filled.
 2. **JSearch.** Start on the free tier. The $25/mo plan is Kris's call, and **nobody signs up on his behalf**.
-3. **One aggregator** only if those two aren't enough. JobsPipe is the obvious first choice. Use up its free credits first.
+3. **JobsPipe** (J16), on the free 1,000 credits. A package is Kris's call, and **nobody signs up or buys credits on his behalf**.
 
 ## Rules for every source
 
@@ -86,6 +86,7 @@ Prices and terms were taken from each vendor's public pages on 2026-10-23. Check
 - **Budgets** (invariant 6):
   - Every metered call goes through `sources/budget.ts`, and every call writes a `source_usage` row.
   - Before each call, `budget.ts` checks the month's usage against that source's `monthly_call_budget`.
+  - JobsPipe has a second cap, `monthly_credit_budget`. `source_usage.credits` holds what each call was charged. A call asks for no more jobs than that budget has left (D142).
   - A source at its budget is skipped, with a warning shown in the UI. It never causes overage, and never fails the run.
 - **Dedupe across sources:**
   - Normalize company names (strip Inc, LLC, Ltd, punctuation and case) before hashing.
@@ -96,17 +97,33 @@ Prices and terms were taken from each vendor's public pages on 2026-10-23. Check
 ## Discovery
 
 `pnpm cli boards:discover --seed resources/seeds/<file>.txt` (committed seed lists live in `resources/seeds/`, D48):
-1. Slugifies each company name.
-2. Probes every board ATS at 1 request per second.
-3. Verifies that the board responds.
-4. Caches the misses, so probes don't repeat.
+1. Slugifies each company name two ways, hyphenated (`riot-games`) and joined (`riotgames`), because boards use either (D137). An `ats/token` line probes that token only.
+2. Probes every board ATS at 1 request per second, stopping on each ATS at the first form that hits.
+3. Verifies that the board responds with at least one posting.
+4. Caches the misses, so probes don't repeat. A timeout isn't cached, so the next run tries it again.
 5. Appends each found board as active.
 
-Seed lists cover game studios, audio and music tech, creative and developer tools, the general remote senior frontend long tail, and, from J3, local Portland and Phoenix employers (PLACES § 8).
+A short name can hit a different company's board (`greenhouse/bethesda` is a physical therapy practice, not the game studio). Read the names it added before scouting them.
+
+Seed lists:
+- `volume.txt`: the first 300+ boards, mostly a general sample of public board tokens, plus game studios, audio and music tech, and creative and developer tools by name.
+- `local.txt`: Portland and Phoenix employers, from J3 (PLACES § 8).
+- `domains.txt`: games and game tech, audio and music tech, creative tools and developer tools by name, the domains `preferences.md` names.
+- `search-links.txt`: boards that HN and JSearch hits link to, on keyless ATSs. Those companies are already hiring for the roles the queries ask for.
+
+**Harvest (J15).** After every scout, board links in the search hits that run ingested are probed, up to 20 a run, and the ones with postings are appended active with the tag `search-link`. Boards `companies.yaml` already lists (active or not) and boards the cache marks as a miss or empty are skipped. `pnpm cli boards:harvest` does the same over every stored search hit, with no cap. Links come from HN, JSearch and JobsPipe hits (J16). Links on Workable, Teamtailor, Workday, Rippling and Personio are counted, never probed. `pnpm cli stats` prints both on its `links` line.
+
+**Relocation (J15).** When a board returns 400, 404, 410 or 422, the scout looks in two places. The first is board links in stored search hits from a company named like it (`Coinhako` finds `SBI Coinhako`). The second is the board's name on every other enabled keyless ATS, through the same probe and cache. Neither reads a careers page or follows a redirect (§ The line). The scout card says where it looked and offers any board with postings. Kris picks it, or pastes the new careers link, and `moveBoard` appends the new board and sets the old entry inactive. Postings that kept their id move on the next scout, with their scores and triage. `pnpm cli boards:relocate` runs the same for the latest finished scout, and `pnpm cli companies:move <ats>/<token> <url>` is the CLI move. Ashby doesn't redirect a renamed board, so a rename to a new name (Coinhako became `ashby/sbi-coinhako`) is found only through a search hit or a pasted link. A board the company took down, whose careers page still points at it (Immunefi, 2026-11-03), can stay active: it costs one request a scout and comes back on its own.
 
 ## Query generation
 
-`sources/query-gen.ts` derives search queries from `preferences.md`, so changing the preferences changes the queries on the next run. From J3, the queries also run per place in `where_default`, within the same monthly budget (PLACES § 8).
+`sources/query-gen.ts` derives search queries from `preferences.md`, so changing the preferences changes the queries on the next run. From J3, the queries also run per place in `where_default`, within the same monthly budget (PLACES § 8). JSearch still sends a rotating window of those queries. JobsPipe sends one request per area, with every title of that area in `job_title_or` (D143).
+
+## JobsPipe (J16)
+
+Built. `POST https://api.jobspipe.dev/v1/jobs/search` with `Authorization: Bearer` and `JOBSPIPE_API_KEY`. One credit per new job per calendar month. The free plan returns at most 25 jobs a call and starts with 1,000 credits once; they do not refill, and a `402` follows when they're gone. `search.jobspipe.monthly_call_budget` caps requests. `monthly_credit_budget` caps credits, and a call's `limit` is never higher than the credits left (D142). Kris set both to 200 calls and 1,000 credits on 2026-11-03. Errors, including a `402`, cost no credits. A `402` is not retried. 429 and 5xx still get the usual three tries. `include_technologies` is never sent.
+
+The terms and acceptable use policy, as read on 2026-11-03: keep the link to the original posting (`url` and `source_url` are both stored, and Open posting uses them), and do not build contact lists. `recruiter_emails` and `applicant_count` are never read (D146). Pay is stored only when `salary_type` is `observed`.
 
 ## Brand data
 

@@ -53,18 +53,25 @@ export function pickHiringStory(raw: unknown): string | undefined {
   return (hit ?? parsed.data.hits[0])?.objectID;
 }
 
-/** Parse one Algolia comment page. `done` is true on the last page. */
+/**
+ * Parse one Algolia comment page. `done` is true on the last page.
+ * `ids` is every comment id on the page, including replies and posts older
+ * than `sinceIso`, which are not ingested. `parsed` is false when the page
+ * itself is not a comment list.
+ */
 export function parseHiringComments(
   raw: unknown,
   sinceIso: string,
-): { hits: SearchHit[]; done: boolean } {
+): { hits: SearchHit[]; done: boolean; ids: string[]; parsed: boolean } {
   const page = commentPageSchema.safeParse(raw);
-  if (!page.success) return { hits: [], done: true };
+  if (!page.success) return { hits: [], done: true, ids: [], parsed: false };
   const since = Date.parse(sinceIso);
   const hits: SearchHit[] = [];
+  const ids: string[] = [];
   for (const item of page.data.hits) {
     const comment = commentSchema.safeParse(item);
     if (!comment.success) continue;
+    ids.push(comment.data.objectID);
     const created = toUtcIso(comment.data.created_at);
     if (created && Number.isFinite(since) && Date.parse(created) < since) continue;
     const plain = htmlToText(comment.data.comment_text ?? '').trim();
@@ -100,7 +107,7 @@ export function parseHiringComments(
   }
   const pageNo = page.data.page ?? 0;
   const pages = page.data.nbPages ?? pageNo + 1;
-  return { hits, done: pageNo + 1 >= pages || page.data.hits.length === 0 };
+  return { hits, done: pageNo + 1 >= pages || page.data.hits.length === 0, ids, parsed: true };
 }
 
 function firstHttps(text: string): string | null {
@@ -118,16 +125,32 @@ export const hnAdapter: SearchAdapter = {
   async search(query, ctx): Promise<SearchHit[]> {
     if (!ctx.charge()) return [];
     const storyRaw = await ctx.http.getJson(STORY_URL, { maxTries: 1 });
+    if (!storySchema.safeParse(storyRaw).success) {
+      throw new Error('HN story response did not parse');
+    }
     const storyId = pickHiringStory(storyRaw);
-    if (!storyId) return [];
+    if (!storyId) throw new Error('HN hiring story was not in the response');
     const hits: SearchHit[] = [];
+    let finished = false;
+    let stoppedForBudget = false;
     for (let page = 0; page < 8; page++) {
-      if (!ctx.charge()) break;
+      if (!ctx.charge()) {
+        stoppedForBudget = true;
+        break;
+      }
       const raw = await ctx.http.getJson(commentUrl(storyId, page), { maxTries: 1 });
       const batch = parseHiringComments(raw, query.since);
+      if (!batch.parsed) throw new Error('HN comment page did not parse');
+      for (const id of batch.ids) ctx.noteResponseId?.(id);
       hits.push(...batch.hits);
-      if (batch.done) break;
+      if (batch.done) {
+        finished = true;
+        break;
+      }
     }
+    // A budget stop is already a failed pass. Stopping at the page cap is not
+    // a full response, so the caller must not close from this slice.
+    if (!finished && !stoppedForBudget) ctx.noteIncomplete?.();
     return hits;
   },
 };

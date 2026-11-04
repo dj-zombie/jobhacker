@@ -12,11 +12,21 @@ import { companiesRepo } from '../db/repo/companies.js';
 import { jobsRepo } from '../db/repo/jobs.js';
 import { runsRepo } from '../db/repo/runs.js';
 import type { LlmClient } from '../llm/types.js';
-import { callsThisMonth, chargeCall } from '../sources/budget.js';
+import { addCredits, callsThisMonth, chargeCall, creditsThisMonth } from '../sources/budget.js';
+import { type ProbeContext, readCache, writeCache } from '../sources/discover.js';
+import {
+  HARVEST_PER_RUN,
+  type HarvestSource,
+  type HarvestStats,
+  formatHarvest,
+  harvestBoards,
+} from '../sources/harvest.js';
 import { hnAdapter } from '../sources/hn.js';
+import { jobspipeAdapter } from '../sources/jobspipe.js';
 import { jsearchAdapter } from '../sources/jsearch.js';
-import { generateQueries, queriesForRun } from '../sources/query-gen.js';
+import { generateQueries, jobspipeQueries, queriesForRun } from '../sources/query-gen.js';
 import { loadBoard } from '../sources/registry.js';
+import { type Relocation, goneStatus, lookedLine } from '../sources/relocate.js';
 import type { SearchAdapter, SearchHit, SearchQuery } from '../sources/search.js';
 import { slugify } from '../sources/slug.js';
 import type { CompanyRef } from '../sources/types.js';
@@ -26,11 +36,13 @@ import type { Http } from '../util/http.js';
 import type { Logger } from '../util/logger.js';
 import { applyAreas, searchPlaces } from './areas.js';
 import { assignDuplicates } from './dedupe.js';
+import { type SearchPasses, closeSearchListings } from './freshness.js';
 import { type GateStats, applyGates } from './gate.js';
 import { applyPrescores } from './prescore.js';
 import { ScoreBusyError, liveScoringRun } from './score-run.js';
 import { type ScoreStats, scoreNewJobs } from './score.js';
 import { type ScoutProgress, parseScoutProgress } from './scout-progress.js';
+import { type UpkeepDeps, relocateBoards } from './upkeep.js';
 
 /**
  * Scout (FR-3, ARCHITECTURE § Flows). Fetches each active board, upserts
@@ -62,6 +74,8 @@ export interface ScoutStats {
   inserted: number;
   updated: number;
   closed: number;
+  /** Of `closed`, how many already had status `shortlisted`. Summed across boards and search sources. */
+  closed_shortlisted: number;
   duplicates: number;
   /** Jobs whose places changed this run (`job_areas`). Never a gate. */
   areas_changed: number;
@@ -69,6 +83,12 @@ export interface ScoutStats {
   /** Each metered search call this run: source, area and query text. */
   search_queries: string[];
   search_skipped_budget: number;
+  /** JobsPipe credits this run. Empty calls means it made none. */
+  jobspipe: {
+    calls: { credits: number }[];
+    credits_remaining: number | null;
+    skipped: string[];
+  };
   /** Gate pass after this run's upserts; null when gating was skipped. */
   gates: GateStats | null;
   prescored: number;
@@ -80,6 +100,12 @@ export interface ScoutStats {
   domains_written: number;
   domains_cleared: number;
   domains_error: string | null;
+  /** Boards this run's search hits link to, probed and added (J15). Null when upkeep was off. */
+  harvest: HarvestStats | null;
+  /** Where each gone board (400, 404, 410, 422) may have moved. The card reads it. */
+  relocation: Relocation[];
+  /** Set when harvest or relocation threw. The scout still finished. */
+  upkeep_error: string | null;
 }
 
 export interface ScoutResult {
@@ -113,10 +139,16 @@ export interface ScoutDeps {
    * Either way the run's stats hold `{progress, beatAt}` after every board and every score attempt.
    */
   runId?: number;
+  /**
+   * Board upkeep (J15): after search ingest, harvest the boards this run's hits link to, and
+   * look for where each gone board moved. The CLI and the app pass it. Omitted: no upkeep.
+   */
+  upkeep?: { dir: string; cachePath: string };
 }
 
 export interface SourceKeys {
   jsearch?: string;
+  jobspipe?: string;
   workable?: string;
   teamtailor?: string;
 }
@@ -125,6 +157,7 @@ export interface SourceKeys {
 export function sourceKeysFromEnv(env: Record<string, string | undefined>): SourceKeys {
   return {
     jsearch: env.JSEARCH_API_KEY,
+    jobspipe: env.JOBSPIPE_API_KEY,
     workable: env.WORKABLE_API_KEY,
     teamtailor: env.TEAMTAILOR_API_KEY,
   };
@@ -152,6 +185,16 @@ export function startScoutRun(db: Db, clock: Clock): number {
 
 export { parseScoutProgress };
 
+/**
+ * Refresh listings: a scout with no scoring. Same lock as Run scout (`startScoutRun`),
+ * and it never enters the Scoring step. Any `scoring` deps are dropped.
+ */
+export async function runRefresh(deps: ScoutDeps): Promise<ScoutResult> {
+  const { scoring: _dropped, ...rest } = deps;
+  void _dropped;
+  return runScout(rest);
+}
+
 export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
   const { db, http, clock, log, companies, criteria } = deps;
   const runs = runsRepo(db, clock);
@@ -160,6 +203,8 @@ export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
   const runId = deps.runId ?? runs.start('scout');
   const stats = emptyStats();
   const touches = new Map<string, DomainTouch>();
+  const harvested: HarvestSource[] = [];
+  const gone: Array<{ ats: string; token: string; name: string }> = [];
   const report = (progress: ScoutProgress) => {
     runs.progress(runId, { progress, beatAt: clock.now() });
   };
@@ -195,6 +240,7 @@ export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
         stats.inserted += outcome.inserted;
         stats.updated += outcome.updated;
         stats.closed += outcome.closed;
+        stats.closed_shortlisted += outcome.shortlisted;
         stats.skipped_jobs += outcome.skipped;
         for (const website of outcome.websites)
           noteDomainTouch(touches, company.name, false, website);
@@ -220,12 +266,15 @@ export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
           message,
         });
         log.error({ ats: company.ats, token: company.token, err: message }, 'board failed');
+        if (goneStatus(err) != null) {
+          gone.push({ ats: company.ats, token: company.token, name: company.name });
+        }
       }
       boardsDone += 1;
       report({ done: boardsDone, total: boardTotal, found: stats.inserted, unit: 'Board' });
     }
 
-    await scoutSearches({
+    const passes = await scoutSearches({
       db,
       http,
       clock,
@@ -237,7 +286,47 @@ export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
       keys: deps.sourceKeys,
       stats,
       touches,
+      harvested,
     });
+    const searchClosed = closeSearchListings(db, clock.now(), passes);
+    stats.closed += searchClosed.closed;
+    stats.closed_shortlisted += searchClosed.shortlisted;
+
+    if (deps.upkeep) {
+      const upkeep: UpkeepDeps = {
+        db,
+        http,
+        log,
+        dir: deps.upkeep.dir,
+        cachePath: deps.upkeep.cachePath,
+        enabled: (criteria.sources ?? LEGACY_SOURCES).boards.enabled,
+        keys: { workable: deps.sourceKeys?.workable, teamtailor: deps.sourceKeys?.teamtailor },
+      };
+      const ctx: ProbeContext = {
+        http,
+        log,
+        cache: readCache(upkeep.cachePath),
+        dir: upkeep.dir,
+        keys: upkeep.keys,
+      };
+      try {
+        const harvest = await harvestBoards(ctx, {
+          sources: harvested,
+          listed: companies,
+          enabled: upkeep.enabled,
+          limit: HARVEST_PER_RUN,
+        });
+        stats.harvest = harvest.stats;
+        log.info({ ...harvest.stats }, 'board links harvested');
+        stats.relocation = await relocateBoards(upkeep, gone, ctx);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        stats.upkeep_error = message;
+        log.error({ err: message }, 'board upkeep failed');
+      } finally {
+        writeCache(upkeep.cachePath, ctx.cache);
+      }
+    }
 
     try {
       const found = refreshTouchedDomains(db, clock, touches);
@@ -304,7 +393,7 @@ export function formatScoutSummary(result: ScoutResult): string {
   const lines = [
     `scout run ${result.runId}: ${result.ok ? 'ok' : 'FAILED'}`,
     `  boards: ${stats.boards_ok} ok, ${stats.boards_failed} failed (${stats.boards} active)`,
-    `  jobs: ${stats.seen} seen, ${stats.inserted} new, ${stats.updated} refreshed, ${stats.closed} closed, ${stats.duplicates} duplicates`,
+    `  jobs: ${stats.seen} seen, ${stats.inserted} new, ${stats.updated} refreshed, ${stats.closed} closed, ${stats.closed_shortlisted} shortlisted, ${stats.duplicates} duplicates`,
     `  places: ${stats.areas_changed} jobs re-classified`,
     stats.gates ? `  ${formatGateSummary(stats.gates)}` : '  gates: skipped',
     `  prescored: ${stats.prescored}`,
@@ -312,6 +401,16 @@ export function formatScoutSummary(result: ScoutResult): string {
     `  domains: ${stats.domains_ms}ms, ${stats.domains_written} found, ${stats.domains_cleared} cleared${stats.domains_error ? ` (finder failed: ${stats.domains_error})` : ''}`,
     `  search: ${stats.search_calls} calls, ${stats.search_skipped_budget} skipped at budget`,
     ...stats.search_queries.map((query) => `    - ${query}`),
+    formatJobspipe(stats.jobspipe),
+    stats.harvest
+      ? `  harvest: ${formatHarvest(stats.harvest)}`
+      : `  harvest: ${stats.upkeep_error ? `failed (${stats.upkeep_error})` : 'off'}`,
+    ...stats.relocation.flatMap((r) => [
+      `  relocation: ${r.name} (${r.ats}/${r.token}): ${lookedLine(r)}`,
+      ...r.candidates.map(
+        (c) => `    - ${c.ats}/${c.token} · ${c.postings} postings · ${c.name} (via ${c.via})`,
+      ),
+    ]),
     stats.scoring === 'skipped' ? '  scoring: skipped' : `  ${formatScoreSummary(stats.scoring)}`,
   ];
   if (stats.errors.length === 0) {
@@ -347,6 +446,7 @@ interface BoardOutcome {
   inserted: number;
   updated: number;
   closed: number;
+  shortlisted: number;
   skipped: number;
   websites: string[];
 }
@@ -442,7 +542,33 @@ async function scoutBoard(deps: {
   }
 
   const closed = deps.jobs.closeMissing(deps.companyId, seen, now);
-  return { seen: seen.size, inserted, updated, closed, skipped: skipped.length, websites };
+  return {
+    seen: seen.size,
+    inserted,
+    updated,
+    closed: closed.closed,
+    shortlisted: closed.shortlisted,
+    skipped: skipped.length,
+    websites,
+  };
+}
+
+function formatJobspipe(jobspipe: ScoutStats['jobspipe']): string {
+  const credits = jobspipe.calls.map((call) => String(call.credits));
+  const creditText = credits.length > 0 ? ` · credits ${credits.join(', ')}` : '';
+  const remaining =
+    jobspipe.credits_remaining == null ? '' : ` · ${jobspipe.credits_remaining} remaining`;
+  const lines = [`  jobspipe: ${jobspipe.calls.length} calls${creditText}${remaining}`];
+  if (jobspipe.skipped.length > 0) lines.push(`    skipped: ${countReasons(jobspipe.skipped)}`);
+  return lines.join('\n');
+}
+
+function countReasons(reasons: readonly string[]): string {
+  const counts = new Map<string, number>();
+  for (const reason of reasons) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  return [...counts]
+    .map(([reason, count]) => (count > 1 ? `${reason} (${count})` : reason))
+    .join('; ');
 }
 
 function keyForBoard(ats: Ats, keys: ScoutDeps['sourceKeys']): string | undefined {
@@ -463,22 +589,31 @@ async function scoutSearches(deps: {
   keys: ScoutDeps['sourceKeys'];
   stats: ScoutStats;
   touches: Map<string, DomainTouch>;
-}): Promise<void> {
+  harvested: HarvestSource[];
+}): Promise<SearchPasses> {
   const sources = deps.criteria.sources ?? LEGACY_SOURCES;
   const now = deps.clock.now();
   const places = searchPlaces(deps.criteria);
-  const queries = generateQueries(deps.preferences, now, places);
+  const queries = generateQueries(
+    deps.preferences,
+    now,
+    places,
+    deps.criteria.remote?.countries ?? [],
+  );
+  const passes: SearchPasses = { hn: { ok: false }, jsearchOk: false, jobspipeOk: false };
 
   if (sources.search.hn.enabled) {
     const remote = queries.find((query) => query.area === REMOTE_AREA) ?? queries[0];
-    await runSearch(
+    const ran = await runSearch(
       deps,
       hnAdapter,
       remote,
       sources.search.hn.monthly_call_budget,
+      null,
       now,
       deps.touches,
     );
+    if (ran.ok) passes.hn = { ok: true, seen: ran.seen };
   }
   if (sources.search.jsearch.enabled) {
     if (!deps.keys?.jsearch) {
@@ -494,22 +629,63 @@ async function scoutSearches(deps: {
       // rotation splits the same monthly budget across remote and each place.
       const perRun = Math.ceil(queries.length / (places.length + 1));
       const slice = queriesForRun(queries, callsThisMonth(deps.db, 'jsearch', now), perRun);
+      let ok = slice.length > 0;
       for (const query of slice) {
         const ran = await runSearch(
           deps,
           jsearchAdapter,
           query,
           sources.search.jsearch.monthly_call_budget,
+          null,
           now,
           deps.touches,
         );
-        if (!ran) break;
+        if (!ran.ok) {
+          ok = false;
+          break;
+        }
       }
+      passes.jsearchOk = ok;
     }
   }
+  if (sources.search.jobspipe.enabled) {
+    if (!deps.keys?.jobspipe) {
+      deps.stats.errors.push({
+        company: 'jobspipe',
+        ats: 'jobspipe',
+        token: 'search',
+        message: 'JOBSPIPE_API_KEY is not set; jobspipe skipped',
+      });
+      deps.log.warn('jobspipe enabled but JOBSPIPE_API_KEY is not set');
+    } else {
+      const areas = jobspipeQueries(queries);
+      let ok = areas.length > 0;
+      for (const query of areas) {
+        const ran = await runSearch(
+          deps,
+          jobspipeAdapter,
+          query,
+          sources.search.jobspipe.monthly_call_budget,
+          sources.search.jobspipe.monthly_credit_budget,
+          now,
+          deps.touches,
+        );
+        if (!ran.ok) {
+          ok = false;
+          break;
+        }
+      }
+      passes.jobspipeOk = ok;
+    }
+  }
+  return passes;
 }
 
-/** Returns false when the budget stopped the source, so the caller can stop paging queries. */
+/**
+ * One search call. `ok` is false on a throw, a budget skip, an unreadable
+ * body, a listing not read to the end, or no query, so nothing is closed.
+ * `seen` is every id the adapter recorded from the response, plus ingested hits.
+ */
 async function runSearch(
   deps: {
     db: Db;
@@ -520,19 +696,46 @@ async function runSearch(
     keys: ScoutDeps['sourceKeys'];
     stats: ScoutStats;
     clock: Clock;
+    harvested: HarvestSource[];
   },
   adapter: SearchAdapter,
   query: SearchQuery | undefined,
   budget: number,
+  creditBudget: number | null,
   now: string,
   touches: Map<string, DomainTouch>,
-): Promise<boolean> {
-  if (!query) return true;
+): Promise<{ ok: boolean; seen: Set<string> }> {
+  const seen = new Set<string>();
+  if (!query) return { ok: false, seen };
   let blocked = false;
+  let failed = false;
+  let incomplete = false;
   try {
     const hits = await adapter.search(query, {
       http: deps.http,
-      key: adapter.name === 'jsearch' ? deps.keys?.jsearch : undefined,
+      key: searchKey(adapter.name, deps.keys),
+      noteResponseId: (id) => seen.add(id),
+      noteIncomplete: () => {
+        incomplete = true;
+      },
+      creditsLeft: () => {
+        if (creditBudget == null) return 0;
+        return Math.max(0, creditBudget - creditsThisMonth(deps.db, adapter.name, now));
+      },
+      recordCredits: (charged, remaining) => {
+        addCredits(deps.db, adapter.name, now, charged);
+        if (adapter.name !== 'jobspipe') return;
+        deps.stats.jobspipe.calls.push({ credits: charged });
+        deps.stats.jobspipe.credits_remaining = remaining;
+      },
+      noteSkipped: (reason) => {
+        if (adapter.name === 'jobspipe') deps.stats.jobspipe.skipped.push(reason);
+      },
+      stopForCredits: () => {
+        blocked = true;
+        deps.stats.search_skipped_budget += 1;
+        deps.log.warn({ source: adapter.name }, 'search source at monthly credit budget');
+      },
       charge: () => {
         const ok = chargeCall(deps.db, adapter.name, now, budget, adapter.costPerCall);
         if (ok) {
@@ -546,13 +749,26 @@ async function runSearch(
         return ok;
       },
     });
+    for (const hit of hits) seen.add(hit.posting.externalId);
     ingestHits(deps, hits, adapter.name, now, touches);
   } catch (err) {
+    failed = true;
     const message = err instanceof Error ? err.message : String(err);
     deps.stats.errors.push({ company: adapter.name, ats: adapter.name, token: 'search', message });
     deps.log.error({ source: adapter.name, err: message }, 'search source failed');
   }
-  return !blocked;
+  if (incomplete) {
+    const message = `${adapter.name} listing was not read to the end, so nothing was closed`;
+    deps.stats.errors.push({ company: adapter.name, ats: adapter.name, token: 'search', message });
+    deps.log.error({ source: adapter.name }, message);
+  }
+  return { ok: !blocked && !failed && !incomplete, seen };
+}
+
+function searchKey(name: SearchAdapter['name'], keys: ScoutDeps['sourceKeys']): string | undefined {
+  if (name === 'jsearch') return keys?.jsearch;
+  if (name === 'jobspipe') return keys?.jobspipe;
+  return undefined;
 }
 
 function describeQuery(source: string, query: SearchQuery): string {
@@ -566,6 +782,7 @@ function ingestHits(
     companies: ReturnType<typeof companiesRepo>;
     clock: Clock;
     stats: ScoutStats;
+    harvested: HarvestSource[];
   },
   hits: SearchHit[],
   source: 'hn' | 'jsearch' | 'jobspipe',
@@ -612,6 +829,10 @@ function ingestHits(
     deps.stats.seen += 1;
     if (result.action === 'inserted') deps.stats.inserted += 1;
     else deps.stats.updated += 1;
+    deps.harvested.push({
+      companyName: hit.companyName,
+      texts: [posting.url, posting.applyUrl, posting.descriptionText],
+    });
   }
 }
 
@@ -625,11 +846,13 @@ function emptyStats(): ScoutStats {
     inserted: 0,
     updated: 0,
     closed: 0,
+    closed_shortlisted: 0,
     duplicates: 0,
     areas_changed: 0,
     search_calls: 0,
     search_queries: [],
     search_skipped_budget: 0,
+    jobspipe: { calls: [], credits_remaining: null, skipped: [] },
     gates: null,
     prescored: 0,
     skipped_jobs: 0,
@@ -639,5 +862,8 @@ function emptyStats(): ScoutStats {
     domains_written: 0,
     domains_cleared: 0,
     domains_error: null,
+    harvest: null,
+    relocation: [],
+    upkeep_error: null,
   };
 }

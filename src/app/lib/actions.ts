@@ -11,11 +11,22 @@ import {
   applyLogoChoice,
 } from '../../core/brand/choose.js';
 import { pickSearchMatch, saveSearchedDomain, searchHitsSchema } from '../../core/brand/search.js';
+import { moveBoard, setCompanyActive } from '../../core/config/companies-file.js';
 import { saveRanking, saveWeights } from '../../core/config/criteria-file.js';
-import { DEFAULT_CONFIG_DIR, loadAllConfig } from '../../core/config/load.js';
-import type { Bands, Criteria, Weights } from '../../core/config/schemas.js';
-import { createDb } from '../../core/db/client.js';
+import { ConfigError, DEFAULT_CONFIG_DIR, loadAllConfig } from '../../core/config/load.js';
+import {
+  BOARD_ATS,
+  type Bands,
+  type BoardAts,
+  type Criteria,
+  type Weights,
+} from '../../core/config/schemas.js';
+import { DEFAULT_BACKUP_DIR } from '../../core/db/backup.js';
+import { createDb, openExistingDb } from '../../core/db/client.js';
 import { applicationsRepo } from '../../core/db/repo/applications.js';
+import { companiesRepo } from '../../core/db/repo/companies.js';
+import { runsRepo } from '../../core/db/repo/runs.js';
+import { type ResetPlan, applyReset, planReset } from '../../core/db/reset.js';
 import type { JobStatus } from '../../core/db/schema.js';
 import { createAnthropicLlm } from '../../core/llm/anthropic.js';
 import { LlmError } from '../../core/llm/types.js';
@@ -27,8 +38,10 @@ import {
   undoTriage,
 } from '../../core/pipeline/review.js';
 import { ScoreBusyError, runScoreBatch, startScoreRun } from '../../core/pipeline/score-run.js';
+import { scoutCard } from '../../core/pipeline/scout-card.js';
 import {
   type ScoutScoringDeps,
+  runRefresh,
   runScout,
   sourceKeysFromEnv,
   startScoutRun,
@@ -43,6 +56,9 @@ import {
 } from '../../core/pipeline/tracker.js';
 import { prepareAnswers } from '../../core/prep/answers.js';
 import { regenerateCoverNote, regenerateResume, runPrep } from '../../core/prep/prep.js';
+import { DEFAULT_CACHE_PATH } from '../../core/sources/discover.js';
+import { MoveError, moveToLink } from '../../core/sources/move.js';
+import { relocationsFromStats } from '../../core/sources/relocate.js';
 import { systemClock } from '../../core/util/clock.js';
 import { createHttp } from '../../core/util/http.js';
 import { createLogger } from '../../core/util/logger.js';
@@ -172,23 +188,24 @@ export type StartScoutResult =
   | { ok: false; error: string };
 
 /**
- * "Run scout now". Opens a scout run and returns its id at once. The scout continues in the
- * server process and writes board, then scoring, progress onto the run. The shell polls
- * `GET /api/scout-run/<id>` (D95, D125), so the tab's other actions are not held for the run.
- * If no `ANTHROPIC_API_KEY` is set, discovery, gates and prescore still run and scoring is
- * skipped; `scoringNote` says so.
+ * Open a scout and return its id at once. The fetch continues in the server process.
+ * The shell polls `GET /api/scout-run/<id>` (D95, D125), so the tab's other actions are
+ * not held for the run. `score` is Run scout. Refresh listings leaves it off, so the run
+ * never enters the Scoring step.
  */
-export async function runScoutNow(): Promise<StartScoutResult> {
+async function beginScout(score: boolean): Promise<StartScoutResult> {
   try {
     const config = loadAllConfig();
 
     let scoring: ScoutScoringDeps | undefined;
     let scoringNote: string | undefined;
-    try {
-      scoring = { llm: createAnthropicLlm(), profile: config.profile };
-    } catch (err) {
-      if (err instanceof LlmError) scoringNote = err.message;
-      else throw err;
+    if (score) {
+      try {
+        scoring = { llm: createAnthropicLlm(), profile: config.profile };
+      } catch (err) {
+        if (err instanceof LlmError) scoringNote = err.message;
+        else throw err;
+      }
     }
 
     const { db, sqlite } = createDb();
@@ -201,7 +218,8 @@ export async function runScoutNow(): Promise<StartScoutResult> {
       throw err;
     }
 
-    void runScout({
+    const run = score ? runScout : runRefresh;
+    void run({
       db,
       http: createHttp(),
       clock: systemClock,
@@ -212,6 +230,7 @@ export async function runScoutNow(): Promise<StartScoutResult> {
       scoring,
       sourceKeys: sourceKeysFromEnv(process.env),
       runId,
+      upkeep: { dir: DEFAULT_CONFIG_DIR, cachePath: DEFAULT_CACHE_PATH },
     })
       .catch((err: unknown) => {
         createLogger().error(
@@ -224,6 +243,174 @@ export async function runScoutNow(): Promise<StartScoutResult> {
     return { ok: true, runId, ...(scoringNote ? { scoringNote } : {}) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * "Run scout now". Discovery, gates, prescore, then scoring. If no `ANTHROPIC_API_KEY`
+ * is set, scoring is skipped and `scoringNote` says so.
+ */
+export async function runScoutNow(): Promise<StartScoutResult> {
+  return beginScout(true);
+}
+
+/** Refresh listings. The same scout and the same lock, with no model call. */
+export async function refreshListings(): Promise<StartScoutResult> {
+  return beginScout(false);
+}
+
+function isBoardAts(value: string): value is BoardAts {
+  return (BOARD_ATS as readonly string[]).includes(value);
+}
+
+/**
+ * Stop scouting one board. Sets `active: false` in companies.yaml and on the
+ * companies row. Jobs already stored stay. Refused while a scout is running,
+ * because that run would turn the board back on.
+ */
+export async function turnOffBoard(input: {
+  ats: string;
+  token: string;
+}): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
+  const ats = input.ats.trim();
+  const token = input.token.trim();
+  if (!isBoardAts(ats) || token.length === 0 || token.length > 200) {
+    return { ok: false, error: 'That board is not valid.' };
+  }
+
+  let config: ReturnType<typeof loadAllConfig>;
+  try {
+    config = loadAllConfig();
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  const { db, sqlite } = createDb();
+  try {
+    if (scoutCard(db, systemClock, config.criteria).running) {
+      return {
+        ok: false,
+        error: 'A scout is running. Turn this board off after it finishes.',
+      };
+    }
+    let edited: { name: string; changed: boolean };
+    try {
+      edited = setCompanyActive(DEFAULT_CONFIG_DIR, ats, token, false);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    try {
+      companiesRepo(db, systemClock).setActive(ats, token, false);
+    } catch (err) {
+      if (edited.changed) {
+        try {
+          setCompanyActive(DEFAULT_CONFIG_DIR, ats, token, true);
+        } catch {
+          // The file is already inactive. The next scout reads that.
+        }
+      }
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    revalidateShell();
+    return { ok: true, name: edited.name };
+  } finally {
+    sqlite.close();
+  }
+}
+
+export type MoveBoardResult = { ok: true; from: string; to: string } | { ok: false; error: string };
+
+/**
+ * Use this board (J15): move a gone board to a board relocation found for it. Only a candidate the
+ * latest scout stored for that board is accepted. `moveBoard` refuses while a scout is live.
+ */
+export async function moveBoardToCandidate(input: {
+  ats: string;
+  token: string;
+  to: { ats: string; token: string };
+}): Promise<MoveBoardResult> {
+  const ats = input.ats.trim();
+  const token = input.token.trim();
+  if (!isBoardAts(ats) || token.length === 0 || token.length > 200) {
+    return { ok: false, error: 'That board is not valid.' };
+  }
+  const { db, sqlite } = createDb();
+  try {
+    const relocation = relocationsFromStats(runsRepo(db, systemClock).latest('scout')?.stats).find(
+      (r) => r.ats === ats && r.token === token,
+    );
+    const candidate = relocation?.candidates.find(
+      (c) => c.ats === input.to.ats && c.token === input.to.token,
+    );
+    if (!candidate) {
+      return { ok: false, error: 'That board is no longer offered. Run scout again.' };
+    }
+    const moved = moveBoard(
+      { dir: DEFAULT_CONFIG_DIR, db, clock: systemClock },
+      { ats, token },
+      {
+        ats: candidate.ats,
+        token: candidate.token,
+        name: candidate.name,
+      },
+    );
+    revalidateShell();
+    return { ok: true, from: moved.from.name, to: moved.to.name };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    sqlite.close();
+  }
+}
+
+/**
+ * The careers-link field (J15): detect the ATS, fetch the board once, and move to it when it has
+ * postings. A refusal comes back as words for the card and changes nothing.
+ */
+export async function moveBoardToLink(input: {
+  ats: string;
+  token: string;
+  url: string;
+}): Promise<MoveBoardResult> {
+  const ats = input.ats.trim();
+  const token = input.token.trim();
+  const url = input.url.trim();
+  if (!isBoardAts(ats) || token.length === 0 || token.length > 200) {
+    return { ok: false, error: 'That board is not valid.' };
+  }
+  if (url.length === 0 || url.length > 500) {
+    return { ok: false, error: "That link isn't a board JobHacker can read. Nothing changed." };
+  }
+  let config: ReturnType<typeof loadAllConfig>;
+  try {
+    config = loadAllConfig();
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  const from = config.companies.companies.find((c) => c.ats === ats && c.token === token);
+  const { db, sqlite } = createDb();
+  try {
+    const keys = sourceKeysFromEnv(process.env);
+    const moved = await moveToLink(
+      {
+        dir: DEFAULT_CONFIG_DIR,
+        db,
+        clock: systemClock,
+        http: createHttp(),
+        keys: { workable: keys.workable, teamtailor: keys.teamtailor },
+      },
+      { ats, token, name: from?.name ?? token },
+      url,
+    );
+    revalidateShell();
+    return { ok: true, from: moved.from.name, to: moved.to.name };
+  } catch (err) {
+    if (err instanceof MoveError || err instanceof ConfigError) {
+      return { ok: false, error: err.message };
+    }
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    sqlite.close();
   }
 }
 
@@ -643,6 +830,51 @@ export async function setCompanyLogo(name: string, choice: unknown): Promise<Log
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   } finally {
     revalidatePath('/companies');
+    revalidateShell();
+  }
+}
+
+export type ResetPlanResult = { ok: true; plan: ResetPlan } | { ok: false; error: string };
+
+/** The dialog's counts. Reads only. */
+export async function loadResetPlan(): Promise<ResetPlanResult> {
+  try {
+    const { db, sqlite } = openExistingDb();
+    try {
+      return { ok: true, plan: planReset(db) };
+    } finally {
+      sqlite.close();
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export type ConfirmResetResult =
+  | { ok: true; before: ResetPlan; after: ResetPlan }
+  | { ok: false; error: string };
+
+/** Back up, then empty the queue. Refuses while a scout or score run is live. */
+export async function confirmReset(): Promise<ConfirmResetResult> {
+  try {
+    const { db, sqlite } = openExistingDb();
+    try {
+      const result = await applyReset({
+        db,
+        sqlite,
+        destDir: DEFAULT_BACKUP_DIR,
+        clock: systemClock,
+      });
+      return { ok: true, before: result.before, after: result.after };
+    } catch (err) {
+      if (err instanceof ScoreBusyError) return { ok: false, error: err.message };
+      throw err;
+    } finally {
+      sqlite.close();
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
     revalidateShell();
   }
 }

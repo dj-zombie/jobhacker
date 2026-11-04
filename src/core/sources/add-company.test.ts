@@ -22,6 +22,9 @@ function tempDir(): string {
 
 function httpReturning(body: unknown): Http {
   return {
+    async postJson() {
+      throw new Error('postJson is not used by this fake');
+    },
     async getJson() {
       return body;
     },
@@ -40,6 +43,9 @@ describe('addCompany', () => {
   it('rejects a board that 404s without writing a file', async () => {
     const dir = tempDir();
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson(url) {
         throw new HttpError(`HTTP 404 from ${url}`, url, 404);
       },
@@ -58,6 +64,9 @@ describe('addCompany', () => {
     );
     const urls: string[] = [];
     const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
       async getJson(url) {
         urls.push(url);
         return fixture;

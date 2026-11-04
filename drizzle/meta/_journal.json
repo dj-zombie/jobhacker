@@ -57,6 +57,20 @@
       "when": 1793100000000,
       "tag": "0007_company_mark_url",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793200000000,
+      "tag": "0008_reset_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793300000000,
+      "tag": "0009_source_usage_credits",
+      "breakpoints": true
     }
   ]
 }

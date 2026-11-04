@@ -36,6 +36,8 @@ interface Seed {
   firstSeenAt?: string;
   duplicate?: boolean;
   application?: boolean;
+  /** Shortlisted and closed. The closed gate has failed. */
+  closed?: boolean;
 }
 
 function setup(seeds: Seed[]): { db: Db; clock: Clock; key: ScoringKey; ids: number[] } {
@@ -55,8 +57,13 @@ function setup(seeds: Seed[]): { db: Db; clock: Clock; key: ScoringKey; ids: num
     db.update(jobs)
       .set({
         status: seed.status,
-        gateResult: seed.duplicate ? { passed: false, gate: 'duplicate', detail: 'dup' } : PASSED,
+        gateResult: seed.closed
+          ? { passed: false, gate: 'closed', detail: 'posting closed' }
+          : seed.duplicate
+            ? { passed: false, gate: 'duplicate', detail: 'dup' }
+            : PASSED,
         duplicateOf: seed.duplicate ? (ids[0] ?? null) : null,
+        ...(seed.closed ? { closedAt: '2026-10-01T00:00:00.000Z' } : {}),
         scoreState: seed.score?.kind === 'current' ? 'current' : 'run_cap',
         ...(seed.firstSeenAt ? { firstSeenAt: seed.firstSeenAt } : {}),
       })
@@ -141,6 +148,45 @@ describe('triageRows', () => {
     const a = triageRows(db, clock, 'top', key).find((r) => r.title === 'A scored today');
     expect(a?.dims).toEqual([5, 5, 5, 5, 5, 5]);
     expect(a?.stale).toBe(false);
+  });
+});
+
+describe('shortlist keeps a closed job', () => {
+  it('a closed shortlisted job is in the shortlist rows and absent from Top matches', () => {
+    const { db, clock, key } = setup([
+      { title: 'Open match', status: 'scored', score: { kind: 'current', fill: 5 } },
+      {
+        title: 'Closed shortlist',
+        status: 'shortlisted',
+        score: { kind: 'current', fill: 5 },
+        closed: true,
+      },
+      {
+        title: 'Closed duplicate',
+        status: 'shortlisted',
+        score: { kind: 'current', fill: 5 },
+        closed: true,
+        duplicate: true,
+      },
+    ]);
+    const shortlist = triageRows(db, clock, 'shortlist', key);
+    const top = titles(db, clock, 'top', key);
+    expect(shortlist.map((row) => row.title)).toContain('Closed shortlist');
+    expect(top).not.toContain('Closed shortlist');
+    expect(shortlist.map((row) => row.title)).not.toContain('Closed duplicate');
+    expect(shortlist.find((row) => row.title === 'Closed shortlist')).toMatchObject({
+      status: 'shortlisted',
+      closed: true,
+    });
+    const criteria = testCriteria();
+    expect(
+      triageCounts(db, clock, {
+        key,
+        weights: criteria.weights,
+        bands: criteria.bands,
+        where: [],
+      }).shortlist,
+    ).toBe(shortlist.length);
   });
 });
 
