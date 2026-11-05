@@ -38,7 +38,7 @@ Jobs the model has not reached. Prescore only decides which of them gets scored 
 
 Prepped, submitted, interviewing, offer. A form that still needs a look shows it on the row.
 
-![The application pipeline, four in progress](applications.png)
+![The application pipeline: two prepped, one submitted, one interviewing](applications.png)
 
 ## Fill report
 
