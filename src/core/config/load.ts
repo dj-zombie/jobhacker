@@ -60,12 +60,16 @@ export function loadConfigFile<T>(
 }
 
 /** Turn a ZodError into `path: message` lines. */
-function formatIssues(error: z.ZodError): string[] {
+export function formatIssues(error: z.ZodError, prefix = ''): string[] {
   return error.issues.map((issue) => {
-    const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
-    return `${path}: ${issue.message}`;
+    const path = [prefix, ...issue.path].filter((p) => p !== '').join('.') || '(root)';
+    const blank = issue.code === 'too_small' && issue.type === 'string' && issue.minimum === 1;
+    return `${path}: ${blank ? "can't be blank" : issue.message}`;
   });
 }
+
+/** What `loadPreferences` says about a blank `preferences.md`, and why `savePreferences` refuses one. */
+export const EMPTY_PREFERENCES = 'file is empty. Describe the roles you want in prose.';
 
 /**
  * Load `preferences.md`, the prose taste document (FR-12). Returned as text;
@@ -82,7 +86,7 @@ export function loadPreferences(dir: string = DEFAULT_CONFIG_DIR): string {
     ]);
   }
   if (text.trim().length === 0) {
-    throw new ConfigError(path, ['file is empty. Describe the roles you want in prose.']);
+    throw new ConfigError(path, [EMPTY_PREFERENCES]);
   }
   return text;
 }

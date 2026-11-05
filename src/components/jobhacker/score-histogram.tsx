@@ -19,7 +19,8 @@ function bandOf(mid: number, t: { strong: number; maybe: number }): Band {
 
 /**
  * How ranked scores are spread across 0–100, with the band thresholds drawn
- * in. Redraws as weights change so a tuning move is visible in aggregate.
+ * in. Bars rise in one after another on mount, then redraw as weights change
+ * so a tuning move is visible in aggregate.
  */
 export function ScoreHistogram({
   scores,
@@ -89,7 +90,7 @@ export function ScoreHistogram({
           const d = barPath(i * bw + 1, baseline - h, bw - 2, h, 4);
           return (
             // biome-ignore lint/suspicious/noArrayIndexKey: a bin's index is its identity (0–9, 10–19, …)
-            <g key={i}>
+            <g key={i} className="origin-bottom animate-bar-rise [transform-box:fill-box]" style={{ animationDelay: `${i * 40}ms` }}>
               <motion.path
                 initial={false}
                 animate={{ d }}
@@ -120,7 +121,7 @@ export function ScoreHistogram({
                 strokeOpacity={0.7}
                 strokeDasharray="3 3"
               />
-              <text x={mx} y={ly} textAnchor={anchor} fontSize={10.5} fill="var(--color-fg-2)" className="tnum">
+              <text x={mx} y={ly} textAnchor={anchor} fontSize={10} fill="var(--color-fg-2)" className="font-mono tnum uppercase tracking-wider">
                 {m.label}
               </text>
             </g>
@@ -135,7 +136,7 @@ export function ScoreHistogram({
             textAnchor={t === 0 ? "start" : t === 100 ? "end" : "middle"}
             fontSize={10}
             fill="var(--color-fg-4)"
-            className="tnum"
+            className="font-mono tnum"
           >
             {t}
           </text>
@@ -144,7 +145,7 @@ export function ScoreHistogram({
 
       {hover !== null ? (
         <div
-          className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-md border border-line-2 bg-surface-3 px-2 py-1 text-2xs whitespace-nowrap text-fg shadow-pop"
+          className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-md border border-line-2 border-l-brand-hi bg-surface-3 px-2 py-1 font-mono text-2xs whitespace-nowrap text-fg shadow-pop"
           style={{
             left: Math.min(width - 40, Math.max(40, hover * bw + bw / 2)),
             top: Math.max(0, baseline - ((counts[hover] ?? 0) / max) * plotH - 30),

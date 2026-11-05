@@ -1,0 +1,71 @@
+/*
+  The site's one stylesheet entry: the kit's fonts and tokens, unchanged. Tailwind's root is
+  site/, so the prototype's sources are added for its class scan. Geist comes from the root
+  `geist` package (the prototype's demo-fonts.css reads its own node_modules instead).
+*/
+@import "../../ui-reference/prototype-src/src/kit/fonts/fonts.css";
+@import "../../ui-reference/prototype-src/src/kit/styles/globals.css";
+
+@source "../../ui-reference/prototype-src/src";
+
+@font-face {
+  font-family: "Geist";
+  src: url("../../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
+  The sample form (site/form/sample-form.html) is someone else's page: plain, light, on paper.
+  Its classes live here so the markup stays as plain as a real ATS form.
+*/
+.sample-form {
+  @apply text-paper-ink;
+  color-scheme: light;
+}
+/* A long option would otherwise widen its select, its field and the fieldset past a phone. */
+.sample-form fieldset,
+.sample-form .field {
+  @apply min-w-0;
+}
+.sample-form .field {
+  @apply grid content-start gap-1.5;
+}
+.sample-form label {
+  @apply text-sm font-medium text-paper-ink;
+}
+.sample-form input:not([type="checkbox"]):not([type="file"]),
+.sample-form select,
+.sample-form textarea {
+  @apply w-full rounded-md border border-paper-ink-2/40 bg-paper px-3 py-2 text-sm text-paper-ink transition-shadow duration-200 focus:border-brand-lo focus:ring-2 focus:ring-brand-lo/30 focus:outline-none;
+}
+.sample-form input[type="file"] {
+  @apply text-sm text-paper-ink-2 file:mr-3 file:rounded-md file:border file:border-paper-ink-2/40 file:bg-paper file:px-3 file:py-1.5 file:text-sm file:text-paper-ink;
+}
+.sample-form textarea {
+  @apply resize-y leading-relaxed;
+}
+.sample-form .consent {
+  @apply flex items-start gap-2.5;
+}
+.sample-form .consent input {
+  @apply mt-0.5 size-4 shrink-0 accent-brand-lo;
+}
+.sample-form .consent label {
+  @apply font-normal;
+}
+.sample-form .sample-submit {
+  @apply rounded-md bg-paper-ink px-4 py-2 text-sm font-medium text-paper disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+/* The demo page is the app: one screen tall, and the panels scroll inside it. */
+html.app,
+html.app body,
+html.app #root {
+  height: 100%;
+}
+html.app body {
+  margin: 0;
+  overflow: hidden;
+}

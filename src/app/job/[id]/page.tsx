@@ -24,7 +24,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   if (!config.ok) {
     return (
       <>
-        <PageHeader icon={Briefcase} title="Job" leading={<MobileNavButton />} />
+        <PageHeader
+          icon={Briefcase}
+          kicker="Triage"
+          title="Job"
+          art="/art/deck-skull.webp"
+          leading={<MobileNavButton />}
+        />
         <EmptyState
           icon={TriangleAlert}
           title="The config has an error"

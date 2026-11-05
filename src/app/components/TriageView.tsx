@@ -5,6 +5,7 @@ import {
   type Density,
   EmptyState,
   FilterChip,
+  Hint,
   JobDetail,
   type JobDetailData,
   JobList,
@@ -13,7 +14,7 @@ import {
   ListingsBanner,
   PageHeader,
   PlaceFilter,
-  Segmented,
+  StatTabs,
   type TriageAction,
   TunePanel,
   parseDescription,
@@ -22,7 +23,6 @@ import {
   useHotkeys,
 } from '@/components/jobhacker';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatCount } from '@/lib/format';
 import { useMediaQuery } from '@/lib/use-media-query';
 import { cn } from '@/lib/utils';
@@ -898,6 +898,12 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
       onTune={() => setTuneOpen(true)}
       onEditLogo={() => logoEdits.openPicker(detail.company)}
       onScore={detail.score == null ? () => void scoreOne(Number(detail.id)) : undefined}
+      context={{
+        label: meta.title,
+        dock: anywhere ? 'anywhere' : whereText,
+        index: index + 1,
+        total: items.length,
+      }}
       primary={
         view === 'shortlist'
           ? {
@@ -912,41 +918,36 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
   ) : null;
 
   const tuneButton = (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant={tuneOpen ? 'secondary' : 'ghost'}
-          size="sm"
-          aria-label="Tune ranking"
-          onClick={() => setTuneOpen((open) => !open)}
-          className={tuneOpen ? 'text-brand-hi' : undefined}
-        >
-          <SlidersHorizontal />
-          <span className="max-sm:hidden">Tune</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        Tune ranking <Kbd className="ml-1">T</Kbd>
-      </TooltipContent>
-    </Tooltip>
+    <Hint label="Tune ranking" shortcut="T" side="bottom">
+      <Button
+        variant={tuneOpen ? 'secondary' : 'outline'}
+        size="sm"
+        aria-label="Tune ranking"
+        onClick={() => setTuneOpen((open) => !open)}
+        className={tuneOpen ? 'text-brand-hi' : undefined}
+      >
+        <SlidersHorizontal />
+        <span className="max-sm:hidden">Tune</span>
+        <Kbd className="-mr-1 h-4 min-w-4 max-xl:hidden">T</Kbd>
+      </Button>
+    </Hint>
   );
 
   const densityButton = (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={density === 'compact' ? 'Use comfortable rows' : 'Use compact rows'}
-          onClick={toggleDensity}
-        >
-          {density === 'compact' ? <Rows3 /> : <Rows4 />}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        {density === 'compact' ? 'Comfortable rows' : 'Compact rows'} <Kbd className="ml-1">D</Kbd>
-      </TooltipContent>
-    </Tooltip>
+    <Hint
+      label={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}
+      shortcut="D"
+      side="bottom"
+    >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={density === 'compact' ? 'Use comfortable rows' : 'Use compact rows'}
+        onClick={toggleDensity}
+      >
+        {density === 'compact' ? <Rows3 /> : <Rows4 />}
+      </Button>
+    </Hint>
   );
 
   const batch = run?.running && !run.jobIds ? run : null;
@@ -956,7 +957,10 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         icon={meta.icon}
+        kicker="Triage"
         title={meta.title}
+        art="/art/deck-skull.webp"
+        glitchKey={`${segment}|${where.join(',')}`}
         count={view === 'top' ? undefined : formatCount(items.length)}
         leading={<MobileNavButton />}
         actions={
@@ -965,18 +969,83 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
             {densityButton}
           </>
         }
+        toolbar={
+          <>
+            <PlaceFilter
+              value={where}
+              onChange={changeWhere}
+              options={data.places.map((p) => ({ ...p, count: placeCounts[p.id] ?? 0 }))}
+            />
+            <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-2 max-md:hidden" />
+            <FilterChip<Seen>
+              label="Seen"
+              value={seen}
+              defaultValue="any"
+              onChange={(v) => setUrl({ seen: v })}
+              options={SEEN_VALUES.map((v) => ({ value: v, label: SEEN_LABEL[v] }))}
+            />
+            <span className="ml-auto flex shrink-0 items-baseline gap-1.5 max-sm:hidden">
+              <span className="font-display text-base font-semibold tnum text-fg">
+                {formatCount(items.length)}
+              </span>
+              <span className="hud-label text-fg-3">
+                {items.length === 1 ? 'job' : 'jobs'}, by{' '}
+                {view === 'unscored' ? 'prescore' : 'rank'}
+              </span>
+            </span>
+            <span className="ml-3 hidden shrink-0 items-center gap-1 text-2xs text-fg-4 xl:inline-flex">
+              <Kbd>J</Kbd>
+              <Kbd>K</Kbd> move
+            </span>
+          </>
+        }
       >
         {view === 'top' ? (
-          <Segmented<Segment>
+          <StatTabs<Segment>
             aria-label="Match band"
             value={segment}
             onChange={changeSegment}
-            className="h-auto min-w-0 max-w-full flex-wrap"
+            parts={[
+              { id: 'strong', count: segCounts.strong, tone: 'bg-strong' },
+              { id: 'maybe', count: segCounts.maybe, tone: 'bg-maybe' },
+              { id: 'weak', count: segCounts.no, tone: 'bg-no' },
+            ]}
             options={[
-              { value: 'matches', label: 'All matches', count: segCounts.strong + segCounts.maybe },
-              { value: 'strong', label: 'Strong', count: segCounts.strong, dot: 'bg-strong' },
-              { value: 'maybe', label: 'Maybe', count: segCounts.maybe, dot: 'bg-maybe' },
-              { value: 'weak', label: 'Weak', count: segCounts.no, dot: 'bg-no' },
+              {
+                value: 'matches',
+                label: 'All matches',
+                shortLabel: 'All',
+                count: segCounts.strong + segCounts.maybe,
+                covers: ['strong', 'maybe'],
+                kbd: '1',
+                hint: `Strong and Maybe: a score of ${bands.maybe} or more.`,
+              },
+              {
+                value: 'strong',
+                label: 'Strong',
+                count: segCounts.strong,
+                dot: 'bg-strong',
+                covers: ['strong'],
+                kbd: '2',
+                hint: `A score of ${bands.strong} or more.`,
+              },
+              {
+                value: 'maybe',
+                label: 'Maybe',
+                count: segCounts.maybe,
+                dot: 'bg-maybe',
+                covers: ['maybe'],
+                kbd: '3',
+                hint: `A score from ${bands.maybe} to ${bands.strong - 1}.`,
+              },
+              {
+                value: 'weak',
+                label: 'Weak',
+                count: segCounts.no,
+                dot: 'bg-no',
+                covers: ['weak'],
+                hint: `A score under ${bands.maybe}.`,
+              },
             ]}
           />
         ) : null}
@@ -995,30 +1064,6 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
           onScore={() => void scoreNext()}
         />
       ) : null}
-
-      <div className="flex min-w-0 flex-wrap items-center gap-2 overflow-x-hidden border-b border-line px-5 py-2 max-md:px-4">
-        <PlaceFilter
-          value={where}
-          onChange={changeWhere}
-          options={data.places.map((p) => ({ ...p, count: placeCounts[p.id] ?? 0 }))}
-        />
-        <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-2 max-md:hidden" />
-        <FilterChip<Seen>
-          label="Seen"
-          value={seen}
-          defaultValue="any"
-          onChange={(v) => setUrl({ seen: v })}
-          options={SEEN_VALUES.map((v) => ({ value: v, label: SEEN_LABEL[v] }))}
-        />
-        <span className="ml-auto shrink-0 text-xs text-fg-3 max-sm:hidden">
-          <span className="tnum text-fg-2">{formatCount(items.length)}</span>{' '}
-          {items.length === 1 ? 'job' : 'jobs'}, by {view === 'unscored' ? 'prescore' : 'rank'}
-        </span>
-        <span className="ml-3 hidden shrink-0 items-center gap-1 text-2xs text-fg-4 xl:inline-flex">
-          <Kbd>J</Kbd>
-          <Kbd>K</Kbd> move
-        </span>
-      </div>
 
       <p className="sr-only" aria-live="polite">
         {selRow ? `${selRow.title} at ${selRow.company}` : ''}
@@ -1063,6 +1108,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
                   ? tune
                   : (detailEl ?? (
                       <EmptyState
+                        still
                         icon={meta.icon}
                         title="Select a job"
                         body="Pick a job on the left to see why it ranked where it did."

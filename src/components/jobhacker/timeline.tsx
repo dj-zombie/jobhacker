@@ -19,9 +19,9 @@ export function Timeline({ groups }: { groups: TimelineGroup[] }) {
     <div className="space-y-6">
       {groups.map((g) => (
         <section key={g.day}>
-          <h3 className="mb-2 text-xs font-medium text-fg-3">{g.day}</h3>
+          <h3 className="hud-label mb-2 text-fg-3">{g.day}</h3>
           <ol className="relative">
-            <span aria-hidden className="absolute bottom-3 left-[13px] top-3 w-px bg-line-2" />
+            <span aria-hidden className="absolute bottom-3 left-[13px] top-3 w-px bg-linear-to-b from-brand/50 via-line-2 to-line-2" />
             {g.items.map((it) => {
               const k = KIND[it.kind];
               const Icon = k.icon;
@@ -34,7 +34,7 @@ export function Timeline({ groups }: { groups: TimelineGroup[] }) {
                     <div className="text-sm text-fg">{it.title}</div>
                     {it.detail ? <div className="mt-0.5 text-xs text-fg-3">{it.detail}</div> : null}
                   </div>
-                  <span className="shrink-0 pt-1 text-xs tnum text-fg-3">{it.time}</span>
+                  <span className="shrink-0 pt-1 font-mono text-2xs tnum text-fg-3">{it.time}</span>
                 </li>
               );
             })}

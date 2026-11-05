@@ -46,9 +46,9 @@ These are non-negotiable for agents.
 6. **Be a polite client.**
  - At most 1 request per second per host.
  - Back off and retry on 429 and 5xx: at most 3 tries, honoring `Retry-After`.
- - Send an honest User-Agent: `JobHacker/<version> (personal job search tool)`.
+ - Send an honest User-Agent: `JobHacker/<version> (personal job search tool; +https://jobhacker.space)`.
  - Metered sources are budgeted as well as rate-limited. Respect each vendor's rate limit, count every call against that source's monthly budget in `criteria.yaml`, and stop calling a source once it reaches its budget rather than run into overage.
- - **Brandfetch from the browser.** Logos and company searches that the user's browser loads from Brandfetch's Logo CDN and Brand Search are page loads, not JobHacker's requests, and Brandfetch requires them to come from the browser. They follow the limits in `docs/reference/SOURCES.md` § Brand data instead of this invariant's rate and budget rules. Everything JobHacker's own code requests follows this invariant in full.
+ - **Brandfetch from the browser.** Logos and company searches that the user's browser loads from Brandfetch's Logo CDN and Brand Search, and logos a visitor's browser loads from the Logo CDN on the public demo with the demo's own client ID, are page loads, not JobHacker's requests, and Brandfetch requires them to come from the browser. They follow the limits in `docs/reference/SOURCES.md` § Brand data instead of this invariant's rate and budget rules. Everything JobHacker's own code requests follows this invariant in full.
 7. **Self-identification fields are filled from `profile.yaml`, never inferred.**
  - EEO and voluntary self-identification fields (gender, race/ethnicity, veteran status, disability status) are filled from the `self_identification` block in `config/profile.yaml`, exactly as written.
  - The model never sees these fields. They're left out of the field-mapping request and filled afterwards by a deterministic mapper. Nothing may derive a value for them from a name, the resume, or anything else.

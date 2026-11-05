@@ -104,7 +104,7 @@ export function DescriptionBlocks({ blocks }: { blocks: DescriptionBlock[] }) {
               itemSeen.set(item, n + 1);
               return (
                 <li key={n ? `${item}#${n}` : item} className="flex gap-2.5">
-                  <span aria-hidden className="mt-[0.6em] size-1 shrink-0 rounded-full bg-fg-4" />
+                  <span aria-hidden className="mt-[0.6em] size-1 shrink-0 bg-brand-hi/70" />
                   <span className="min-w-0 break-words">{item}</span>
                 </li>
               );

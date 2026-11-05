@@ -89,7 +89,7 @@ export function LogoPickerDialog({ company }: { company: string | null }) {
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Company name"
             autoFocus
-            className="mt-3 h-9 w-full rounded-md border border-line-2 bg-surface-1 px-3 text-sm text-fg outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand-hi"
+            className="mt-3 h-9 w-full rounded-md border border-line-2 bg-surface-1 px-3 text-sm text-fg outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-uv-hi"
           />
         </div>
         <ul className="max-h-64 overflow-y-auto py-1">
@@ -101,7 +101,7 @@ export function LogoPickerDialog({ company }: { company: string | null }) {
                 <button
                   type="button"
                   onClick={() => pick(hit)}
-                  className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-3 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand-hi"
+                  className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-3 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-uv-hi"
                 >
                   <CompanyLogo name={hit.name} src={placeholderMark(hit.domain)} size={32} />
                   <span className="min-w-0">
@@ -131,7 +131,7 @@ export function LogoPickerDialog({ company }: { company: string | null }) {
                 onChange={(e) => setTyped(e.target.value)}
                 aria-label="Domain"
                 placeholder="linear.app"
-                className="h-8 min-w-0 flex-1 rounded-md border border-line-2 bg-surface-1 px-2.5 text-sm text-fg outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand-hi"
+                className="h-8 min-w-0 flex-1 rounded-md border border-line-2 bg-surface-1 px-2.5 text-sm text-fg outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-uv-hi"
               />
               <Button type="submit" size="sm">
                 Save

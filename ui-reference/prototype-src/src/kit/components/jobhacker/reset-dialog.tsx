@@ -34,7 +34,7 @@ const ROWS: { label: string; value: (plan: ResetCounts) => number }[] = [
 ];
 
 const ring =
-  "outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-hi";
+  "outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-uv-hi";
 
 /**
  * Start fresh. Confirm stays disabled until the field equals RESET.
@@ -66,8 +66,9 @@ export function ResetDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent className="max-w-md p-0">
-        <div className="flex items-start gap-3 border-b border-line px-5 py-4">
+      <DialogContent className="max-w-md overflow-hidden p-0">
+        <div aria-hidden className="hazard-warn h-1" />
+        <div className="scanlines-light flex items-start gap-3 border-b border-line px-5 py-4">
           <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-3 ring-1 ring-line-2">
             <Eraser className="size-4 text-brand-hi" />
           </span>
@@ -94,7 +95,7 @@ export function ResetDialog({
             {ROWS.map((row) => (
               <li key={row.label} className="flex items-baseline justify-between gap-4 px-5 py-1.5 text-sm">
                 <span className="text-fg-2">{row.label}</span>
-                <span className="tnum text-fg">{formatCount(row.value(plan))}</span>
+                <span className="font-mono text-xs tnum text-fg">{formatCount(row.value(plan))}</span>
               </li>
             ))}
           </ul>

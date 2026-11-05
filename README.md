@@ -10,6 +10,8 @@ Chrome** — so you review and click **Submit** yourself.
 
 More of the interface is in [docs/screenshots](docs/screenshots/README.md). These pictures are the running app with sample data, not a live search.
 
+**Try the demo** at [jobhacker.space](https://jobhacker.space), in your browser with nothing to install: the interface on a fictional candidate and sample jobs. Its Open & fill replays a recorded run of the real form filler on a sample form. Nothing you do there is saved or sent.
+
 It is built to be safe by design:
 
 - **It never submits an application.** It only fills fields; you submit every one.
@@ -99,6 +101,16 @@ your own in `config/criteria.yaml` (see `docs/reference/PLACES.md`).
 | `config/criteria.yaml` | Mechanical settings only: the hard gates (`max_age_days`, `company_blocklist`), six ranking weights, strong/maybe bands, the per-run scoring cap (`max_new_scores_per_run`) and models. The compatibility `prescore_floor` field must stay `0` until removed from the schema. Have a v1 file with title/location keyword lists? Run `pnpm cli config:migrate`: it keeps the old file as `criteria.v1.yaml` and drafts `preferences.md` from your keywords. |
 | `config/companies.yaml` | The ATS boards to scout. Add one easily with `pnpm cli companies:add <careers-url>` (it detects the ATS and verifies the board). |
 | `.env` | `ANTHROPIC_API_KEY=…` (required for scoring/prep). Optional: `DATABASE_PATH`, `JOBHACKER_CHROME_PATH` (where Chrome is, if it isn't found), `JOBHACKER_CDP_ENDPOINT` (the dedicated Chrome's debugging address, `http://127.0.0.1:9222` by default), and the search-source keys listed in `.env.example`. |
+
+**Editing in the app.** Once the app is running (`pnpm dev`), Setup → **Settings** edits
+`profile.yaml` (Profile, Answers, Self-ID) and `preferences.md` (Preferences). Each section saves
+on its own, is validated first, and changes only its own lines, so your comments stay. The previous
+file is copied to `data/backups/config/` before each save. An edit that would re-score your jobs
+(summary, skills, experience or preferences) says how many scores go stale, and roughly what
+re-scoring costs, before it saves. A save is refused while a scout or score run is going.
+Hand-editing the files still works. Settings reads them fresh each time a page loads, and a save
+rewrites only its own section, so a hand edit elsewhere in the file survives. Reload the page after
+hand-editing a section, or saving that section in the app writes what the page showed.
 
 Each example file documents its own schema inline. Validate your config any time with:
 

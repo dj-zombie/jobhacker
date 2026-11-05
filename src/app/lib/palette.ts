@@ -11,6 +11,8 @@
  *   not a FAIL, because a band always comes with its score number and label.
  * - Each status color (danger, info) is ΔE2000 ≥ 10 from every band, so a warning never reads
  *   as a band. Below 5 is a FAIL; 5–10 is a WARN. The two status colors are ≥ 10 apart.
+ * - The brand and brand-hi are ΔE2000 ≥ 10 from each status color, with the same FAIL and WARN
+ *   steps, so the red brand (D150) never reads as a warning.
  * The hairline `line` tokens are translucent, so they aren't read here: they're decorative.
  * A WARN listed in ACCEPTED_WARNS reports as ACCEPTED. A FAIL listed in KNOWN_FAILS reports as
  * KNOWN. J8 (D126) fixed the seven pairs J4 had listed, in the reference kit, so the list is empty.
@@ -207,6 +209,7 @@ const TEXT_COLORS = [
 const MARK_COLORS = ['brand', 'brand-hi', 'strong', 'maybe', 'no', 'danger', 'info'] as const;
 const BANDS = ['strong', 'maybe', 'no'] as const;
 const STATUS = ['danger', 'info'] as const;
+const BRANDS = ['brand', 'brand-hi'] as const;
 
 const ratio = (n: number) => `${n.toFixed(2)}:1`;
 const de = (n: number) => `ΔE ${n.toFixed(1)}`;
@@ -287,6 +290,19 @@ function rawChecks(colors: Record<string, Rgb>): CheckRow[] {
       push(
         'status vs band',
         `${s} / ${b}`,
+        de(d),
+        '≥ 10',
+        d >= 10 ? 'PASS' : d >= 5 ? 'WARN' : 'FAIL',
+      );
+    }
+  }
+
+  for (const b of BRANDS) {
+    for (const s of STATUS) {
+      const d = deltaE(get(b), get(s));
+      push(
+        'brand vs status',
+        `${b} / ${s}`,
         de(d),
         '≥ 10',
         d >= 10 ? 'PASS' : d >= 5 ? 'WARN' : 'FAIL',

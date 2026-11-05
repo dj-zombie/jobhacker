@@ -1,6 +1,6 @@
 'use client';
 
-import { Timeline, type TimelineGroup, toast } from '@/components/jobhacker';
+import { Hint, Timeline, type TimelineGroup, toast } from '@/components/jobhacker';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
@@ -511,7 +511,7 @@ export function ActivityPanel({
         )}
       </div>
       <div className="space-y-3">
-        <section className="surface-card rounded-xl p-4">
+        <section className="surface-card chamfer relative rounded-xl p-4">
           <label htmlFor="follow-up" className="text-sm font-semibold text-fg">
             Follow-up
           </label>
@@ -547,7 +547,7 @@ export function ActivityPanel({
             </Button>
           </div>
         </section>
-        <section className="surface-card rounded-xl p-4">
+        <section className="surface-card chamfer relative rounded-xl p-4">
           <label htmlFor="notes" className="text-sm font-semibold text-fg">
             Notes
           </label>
@@ -603,11 +603,11 @@ export function CopyPastePanel({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-3.5 py-3 text-left outline-none transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-hi"
+        className="flex w-full items-center gap-2 px-3.5 py-3 text-left outline-none transition-colors hover:bg-surface-2 hover:row-wash focus-visible:bg-surface-2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-uv-hi"
       >
         <ClipboardList className="size-4 shrink-0 text-fg-3" />
         <span className="text-sm font-semibold text-fg">Answers to copy and paste</span>
-        <span className="text-xs tnum text-fg-3">{rows.length}</span>
+        <span className="font-mono text-xs tnum text-fg-3">{rows.length}</span>
         <ChevronDown
           className={cn(
             'ml-auto size-4 shrink-0 text-fg-3 transition-transform',
@@ -639,27 +639,32 @@ export function CopyPastePanel({
 
 function CopyValue({ value, label }: { value: string; label: string }) {
   const [done, setDone] = React.useState(false);
+  const line = value.split('\n')[0]?.trim() ?? '';
+  const preview = line.length > 0 && line.length <= 72 ? line : undefined;
   return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      aria-label={`Copy ${label}`}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-        } catch {
-          toast("Couldn't copy", {
-            description: 'The browser refused the clipboard. Select the text and copy it by hand.',
-            icon: <TriangleAlert className="text-danger" />,
-          });
-          return;
-        }
-        setDone(true);
-        window.setTimeout(() => setDone(false), 1200);
-        toast('Copied', { description: 'Paste it into the form.' });
-      }}
-    >
-      {done ? <Check className="text-strong" /> : <Copy />}
-    </Button>
+    <Hint label={done ? 'Copied' : `Copy ${label}`} detail={done ? undefined : preview} side="left">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`Copy ${label}`}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(value);
+          } catch {
+            toast("Couldn't copy", {
+              description:
+                'The browser refused the clipboard. Select the text and copy it by hand.',
+              icon: <TriangleAlert className="text-danger" />,
+            });
+            return;
+          }
+          setDone(true);
+          window.setTimeout(() => setDone(false), 1200);
+          toast('Copied', { description: 'Paste it into the form.' });
+        }}
+      >
+        {done ? <Check className="text-strong" /> : <Copy />}
+      </Button>
+    </Hint>
   );
 }

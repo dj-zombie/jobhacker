@@ -3,6 +3,7 @@
 import * as React from "react";
 import { animate, motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { Hint } from "./hint";
 import type { Band } from "./types";
 
 export const BAND_LABEL: Record<Band, string> = {
@@ -34,18 +35,19 @@ export function ScorePill({
   className?: string;
 }) {
   return (
-    <span
-      title={`${score} · ${BAND_LABEL[band]}`}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full font-semibold tnum ring-1 ring-inset",
-        size === "sm" ? "h-5 px-1.5 text-2xs" : "h-6 px-2 text-xs",
-        PILL[band],
-        className,
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", DOT[band])} />
-      {score}
-    </span>
+    <Hint label={BAND_LABEL[band]} meta={score} side="left">
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full font-mono font-semibold tnum ring-1 ring-inset",
+          size === "sm" ? "h-5 px-1.5 text-2xs" : "h-6 px-2 text-xs",
+          PILL[band],
+          className,
+        )}
+      >
+        <span className={cn("size-1.5 rounded-full", DOT[band])} />
+        {score}
+      </span>
+    </Hint>
   );
 }
 
@@ -101,7 +103,10 @@ export function AnimatedNumber({
   );
 }
 
-/** The score as a ring. Draws in on mount and sweeps to each new value. */
+/**
+ * The score as a ring, with static HUD ticks inside it (every 2.5 points, brighter
+ * every 25) and a halo in the band's color. Draws in on mount and sweeps to each new value.
+ */
 export function ScoreRing({
   score,
   band,
@@ -121,6 +126,8 @@ export function ScoreRing({
   const clamped = Math.max(0, Math.min(100, score));
   const offset = c * (1 - clamped / 100);
   const color = `var(--color-${band})`;
+  const tr = r - stroke / 2 - 4;
+  const tc = 2 * Math.PI * tr;
 
   return (
     <div
@@ -129,7 +136,30 @@ export function ScoreRing({
       role="img"
       aria-label={`Score ${score} of 100, ${BAND_LABEL[band]}`}
     >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
+      <div
+        aria-hidden
+        className="absolute inset-0 rounded-full"
+        style={{ background: `radial-gradient(circle, color-mix(in oklab, ${color} 16%, transparent) 30%, transparent 68%)` }}
+      />
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="relative -rotate-90 overflow-visible" aria-hidden>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={tr}
+          fill="none"
+          stroke="var(--color-line-2)"
+          strokeWidth={3}
+          strokeDasharray={`1 ${tc / 40 - 1}`}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={tr}
+          fill="none"
+          stroke="var(--color-fg-4)"
+          strokeWidth={4}
+          strokeDasharray={`1.5 ${tc / 4 - 1.5}`}
+        />
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--color-surface-4)" strokeWidth={stroke} />
         <motion.circle
           cx={size / 2}
@@ -153,9 +183,9 @@ export function ScoreRing({
         <AnimatedNumber
           value={score}
           startFrom={0}
-          className="text-3xl font-semibold leading-none tracking-tighter tnum text-fg"
+          className="font-display text-3xl font-semibold leading-none tracking-tight tnum text-fg"
         />
-        <span className="mt-1 text-2xs text-fg-3">of 100</span>
+        <span className="hud-label mt-1 text-fg-3">of 100</span>
       </div>
     </div>
   );

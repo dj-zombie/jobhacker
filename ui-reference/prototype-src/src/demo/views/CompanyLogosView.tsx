@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { useDemo } from "../App";
 import { applyLogo, companyLogoRows, openLogoPicker, useLogoOverrides, type DemoLogoRow } from "../logo-store";
 import { placeholderMark } from "../logos";
+import deckAlien from "@/art/deck-alien.webp";
 
 type Segment = "needs" | "confirmed" | "all";
 
@@ -64,7 +65,9 @@ export function CompanyLogosView() {
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         icon={Images}
+        kicker="Setup"
         title="Company logos"
+        art={deckAlien}
         leading={
           isMobile ? (
             <Button variant="ghost" size="icon-sm" aria-label="Open navigation" onClick={openMobileNav}>

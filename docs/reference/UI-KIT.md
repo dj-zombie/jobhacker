@@ -50,6 +50,8 @@ The kit needs Tailwind v4, because it uses `@theme`, `@utility` and the built-in
 | From `ui-reference/prototype-src/src/kit/` | To | What it is |
 |---|---|---|
 | `styles/globals.css` | `src/app/globals.css` (replaces it) | Every token, in Tailwind v4 `@theme`. Also: shadcn names mapped onto them, the base layer, utilities |
+| `fonts/` | `src/app/fonts/` | Tektur and Martian Mono: the woff2 files, their licenses, and `fonts.css` (§ Fonts) |
+| `art/` | `public/art/` | The page header's section art (D158): a skull for Triage, a hooded hacker for Applications, an alien for Setup. WebP whose black is transparent. The prototype imports them; the app passes `/art/<name>.webp` to `PageHeader`'s `art` |
 | `lib/utils.ts`, `lib/format.ts` | `src/lib/` | `cn()`, plus number and age formatting |
 | `components/ui/{button,tooltip,dialog,tabs,dropdown-menu,slider}.tsx` | `src/components/ui/` (replaces them) | shadcn primitives, restyled. Same exports |
 | `components/jobhacker/*` | `src/components/jobhacker/` | The app's components. Presentational only |
@@ -64,24 +66,28 @@ The kit needs Tailwind v4, because it uses `@theme`, `@utility` and the built-in
 
 ## Fonts
 
-`globals.css` reads `--font-geist-sans` and `--font-geist-mono`. Set them on `<html>`:
+Three faces (D150): Geist for body text, Tektur for display, Martian Mono for labels and counts.
+- **Geist** comes from the `geist` package. `globals.css` reads `--font-geist-sans`, which Next.js sets on `<html>`.
+- **Tektur and Martian Mono** are the kit's own files: `ui-reference/prototype-src/src/kit/fonts/` holds their variable woff2 files, their SIL Open Font License texts (`OFL-*.txt`), and `fonts.css`, which declares them. `globals.css` names them directly. Copy the folder to `src/app/fonts/` and import its `fonts.css` before `globals.css`.
 
 ```tsx
 // src/app/layout.tsx
 import { GeistSans } from "geist/font/sans";
-import { GeistMono } from "geist/font/mono";
+import "./fonts/fonts.css";
 import "./globals.css";
 
 export const metadata = { title: "JobHacker" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="en" className={GeistSans.variable}>
       <body>{children}</body>
     </html>
   );
 }
 ```
+
+`fonts.css` uses plain `@font-face` rather than `next/font/local`, because each face is two files split by `unicode-range` (latin and latin-ext), and `next/font/local` can't give its files different ranges. Martian Mono is declared at one width, 87.5%, so labels fit. Check that it renders condensed: 24 characters of 500-weight 11px label text measure 172px in the prototype, against 185px at full width.
 
 Don't copy `ui-reference/prototype-src/src/demo/demo-fonts.css`. It exists only because the prototype runs outside Next.js.
 
@@ -172,6 +178,10 @@ export function useMediaQuery(query: string): boolean {
 ```
 
 On a narrow window, the sidebar can show expanded for a single frame before it collapses. That's acceptable.
+
+**Collapsing by hand.** From 1280px up, the sidebar can be pinned to the same icon rail. The root layout reads the `jobhacker_sidebar` cookie (`rail` or `expanded`) and passes it in, so the first paint matches. A control in the sidebar header, ⌘B, and the command palette all toggle it. Below 1280px the rail is the layout and the control is hidden. Below 768px the sidebar stays a drawer. A count of one or two characters sits on the icon; a longer one stays in the tooltip. The choice is this browser's, and it does not change what's stored about jobs.
+
+**Tooltips** (D159). `Tooltip` is the Radix primitive. `Hint` is the one callers use: a label, an optional shortcut drawn as key caps, and one line of context. The first hover waits 400ms. Moving to another control inside 300ms opens the next tip at once. A tip is not hoverable, so the gap between it and the control doesn't keep it open over the next one. It fades in. It does not animate `transform`, which is what positions it. Touch never opens one, so the first tap still activates the control. A `disabled` button receives neither hover nor focus, so a control that must explain itself while it won't run stays enabled, sets `aria-disabled`, and ignores the click. A labeled action whose key cap hides at some widths names its key in its tip (D160). A list row renders again only when its job, selection or density changes, so keep `JobList`'s row memoized and its handler stable: a tip on every row control is otherwise rebuilt on every J press.
 
 **Counts that follow the view.** The sidebar's counts depend on Where, which is a URL param, on triage actions, and, from J6, on live weights. But a Next.js layout can't see search params, and doesn't re-render on client navigation. The recommended approach:
 - The shell's client container reads `where` with `useSearchParams`. If `next build` asks for one, wrap it in `<Suspense>`.
@@ -334,6 +344,49 @@ Without a client ID, every tile falls back to its monogram.
 - **Don't add a UI library** beyond what the kit uses.
 - **When the app needs something the reference doesn't show** (an existing feature the prototype left out, like application status changes), build it from kit primitives, following the reference's patterns. List it in STATUS so Kris can look at it. Don't drop the feature, and don't invent a new look for it.
 - **When something in the reference won't work with the real data,** stop and say what and why in STATUS, rather than improvising.
+
+## Motion
+
+The look is a HUD (D149, recolored and retimed after immunefi.com by D150): one target lock that springs between targets, mono labels, a chamfered corner, the job header's acquire sequence, glitch and decode text, a radar. None of it may cost triage speed. J and K stay instant at 11,000 rows. Every round that adds or changes motion follows these rules.
+
+- **What may animate.** Keyframes, and any transition on a list row, change only `transform` and `opacity`. `clip-path` is allowed on small one-shot elements: a title, a label, a tooltip, a toast, a leaving row. A hover transition on a single control, such as a button, a chip or a sidebar link, may also change color, border and box-shadow.
+- **Loops are few.** An animation repeats forever only while it shows something live, or as the job header's one ambient beam:
+  - the caret in the brand mark
+  - the REC dot and the scan beam in the job header. The beam pauses while the header is off screen and during a burst
+  - the radar and the blinking square while a scout runs
+  - the radar in an empty state that is on screen
+
+  At most three run on a screen at rest, and a running scout adds its own indicator for as long as it runs. One indicator can be several elements: a radar's sweep, blips and pings count as one, and so do the beam's window and its counter-moving canvas. A radar beside other live loops gets `still`.
+- **One lock per surface.** A target lock (`TargetLock`) is one element with four corner children, whatever the number of targets. `lockTo` moves it by transform: a spring glide by default, a fly-in from another box (`from`), a snap from outside (`spread`), or a jump (`instant`). Only `from`, `spread` and `instant` force a layout. Never give each row or item its own brackets.
+- **Rows get no new DOM.** The virtualized list's effects are pseudo-elements and transitions on elements it already renders: the tick and the wash on the row. The selection's highlight and lock are siblings of the rows, one each.
+- **Selection changes don't animate rows.** A row's transitions sit under `row-hover:`, so J and K move the selected tick at once, and the eased slide plays only for a moving pointer. A transition that starts on every J press puts a compositor layer on each row it touches. With the bar's transition always on, 200 J presses were about 290 ms slower (J17).
+- **A burst holds the show** (`useAcquire`). A change that comes less than 300 ms after the previous one is part of a burst: holding J, or pressing it fast. During a burst the header skips its acquire sequence and pauses the beam, and the list's lock lets go of the row. One acquire plays 300 ms after the last change, and the list's lock snaps onto the row. A single move still plays everything. When the list's lock restarted its springs on every press, style recalculation during 200 J presses was about 20% higher (D150).
+- **A glitch that can't finish is skipped.** The detail title glitches only as part of an acquire, so holding J doesn't restart it on every press. `glitch-text` draws its two colored copies only while `glitch-run` is on, so text at rest costs no extra boxes.
+- **Row hover follows a moving pointer.** Row hover styles use the `row-hover:` and `group-row-hover:` variants, never `hover:`. The listbox sets `data-pointer` on pointer move and clears it on scroll. That way J, K and the wheel don't light up rows under a resting pointer. Plain `:hover` made 200 J presses about 250 ms slower (D149).
+- **No expensive paint on big surfaces.** No `mix-blend-mode`, `backdrop-filter` or animated `filter` on a large or scrolling surface. Texture (scanlines, grain, the grid) never animates, except the header scanlines' one jolt per acquire and the deck art's one tear per change. The header art's duotone is a static SVG filter: the wipe moves the filtered layer, and never changes the filter. The glyph field draws its two canvases once per size, never per frame.
+- **Text effects in JS.** A decode or glitch effect runs one `requestAnimationFrame` loop per element, cancels on the next change, and never delays a key handler. The real text stays in the DOM for screen readers, and the scramble is an `aria-hidden` overlay.
+- **Chamfers and focus.** `chamfer` clips one corner with `clip-path`, which also clips a focus ring drawn outside. A focusable chamfered element draws its ring inset (`focus-visible:-outline-offset-2`). A full-bleed sheet or drawer sets `[--chamfer:0px]`.
+- **Reduced motion.** The reduced-motion block in `globals.css` stays: every animation and transition runs for 1 ms, once. JS effects check `useReducedMotion` and show the final text at once. Locks, ticks and bars still appear, without motion, and the header lock jumps straight to the cover. The beam is hidden. No state is shown by animation alone.
+- **The pieces,** all in `globals.css` or the kit:
+
+  | Piece | What it is |
+  |---|---|
+  | `hud-label`, `hud-rule` | Mono 2xs uppercase label, and the short red rule before a section label |
+  | `TargetLock`, `lockTo`, `releaseLock`, `boxIn` | The target lock on the selected row, the hovered sidebar link, the active ⌘K item and the job header's cover. `--lock-ms` sets its glide |
+  | `useAcquire`, `replay` | The burst rule: runs a change's effect only after a pause, and replays `data-replay` animations |
+  | `GlyphField` | The header's character field, and the scan beam that lights it |
+  | `hud-corners`, `hud-on` | Corner brackets on a single control, such as a button, and their on state. Tuned with `--hud-x`, `--hud-y`, `--hud-l`, `--hud-c` |
+  | `chamfer` | One clipped corner, with `--chamfer` and `--chamfer-edge` |
+  | `scanlines`, `scanlines-light`, `grain`, `grid-bg` | Static texture. The grid lives inside the page header's deck and fades out before its bottom edge (D157) |
+  | `deck`, `deck-rail`, `deck-tile`, `--shadow-deck` | The page header's deck (D157): the raised plate and its violet and red light, its bottom edge lit red under the title and cooling to violet, and the page icon's tile. All static |
+  | `deck-art`, `animate-deck-glitch`, `text-aberration` | The deck's section art (D158), set by `PageHeader`'s `art` as `--deck-art`: held large on the right with its eyes level with the title, fading out toward the filters, under scanlines masked to the art. `animate-deck-glitch` tears it once (520 ms, transform and opacity, with a ghost copy in its `::before`) when the title or `glitchKey` changes. Not a loop. `text-aberration` is the title's static red and cyan split |
+  | `StatTabs` | Top matches' band tabs as readouts: the count set large, and a meter of the strong, maybe and weak split with the tab's own slice lit. The meter moves by transform when the counts change |
+  | `scroll-fade-end` | The fade at the end of a row that scrolls sideways, such as the deck's filters on a phone |
+  | `rec`, `hazard`, `hazard-warn`, `viewfinder` | The REC dot, the red and orange hazard stripes, and the header's viewfinder corners |
+  | `glitch-text`, `glitch-run` | An RGB-split glitch on text with `data-text`. `glitch-run` plays it once, and `--glitch-ms` sets its length |
+  | `row-wash` | The violet hover gradient on rows |
+  | `DecodeText`, `useDecodeText` | A title that decodes once from scrambled characters |
+  | `RadarSweep` | The radar. It animates only while on screen and not `still` |
 
 ## Checks
 

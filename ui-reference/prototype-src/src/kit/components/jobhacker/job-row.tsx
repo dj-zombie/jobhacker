@@ -3,40 +3,55 @@
 import type * as React from "react";
 import { ArrowUpRight, Bookmark, MapPin, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatAge } from "@/lib/format";
+import { formatAge, formatAgeLong } from "@/lib/format";
 import { CompanyLogo } from "./company-logo";
+import { Hint } from "./hint";
 import { ScorePill } from "./score";
 import { ClosedChip, PlaceChip, PrescoreMeter, RemoteChip, Sep, StateChip } from "./chips";
 import type { Density, JobSummary, TriageAction } from "./types";
 
 function QuickAction({
   label,
+  shortcut,
   onClick,
+  className,
   children,
 }: {
   label: string;
+  shortcut: string;
   onClick: () => void;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className="inline-flex size-7 items-center justify-center rounded-md text-fg-2 transition-colors hover:bg-surface-4 hover:text-fg [&_svg]:size-3.5"
-    >
-      {children}
-    </button>
+    <Hint label={label} shortcut={shortcut} side="top">
+      <button
+        type="button"
+        aria-label={`${label} (${shortcut})`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        className={cn(
+          "inline-flex size-7 translate-x-1.5 items-center justify-center rounded-md text-fg-2 opacity-0 [&_svg]:size-3.5",
+          "transition-[background-color,color,opacity,translate] duration-150 ease-out-quint",
+          "hover:bg-surface-4 hover:text-brand-hi group-row-hover:translate-x-0 group-row-hover:opacity-100",
+          className,
+        )}
+      >
+        {children}
+      </button>
+    </Hint>
   );
 }
 
 /**
- * One job in the triage list. Selection is drawn by the list (a highlight that
- * glides between rows); the row only renders content and hover actions.
+ * One job in the triage list. Selection is drawn by the list (a highlight and a
+ * target lock that glide between rows); the row only renders content, its red
+ * selected bar, and hover actions. Hover lights an ultraviolet wash and left bar
+ * on the row's own pseudo-element, so the virtualized list gets no extra DOM.
+ * Hover uses the list's row-hover variants: nothing lights up while J and K
+ * scroll rows under a resting pointer.
  */
 export function JobRow({
   job,
@@ -55,8 +70,11 @@ export function JobRow({
   return (
     <div
       className={cn(
-        "group relative flex h-full min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors duration-150",
-        !selected && "hover:bg-surface-2",
+        "group relative flex h-full min-w-0 items-center gap-3 overflow-hidden rounded-md px-3 transition-colors duration-150",
+        "before:absolute before:inset-y-3 before:left-1 before:w-0.5 before:origin-center",
+        selected
+          ? "before:scale-y-100 before:bg-brand-hi before:shadow-neon"
+          : "before:scale-y-0 before:bg-uv-hi row-hover:bg-surface-2/60 row-hover:row-wash row-hover:before:scale-y-100 row-hover:before:shadow-neon-uv row-hover:before:transition-transform row-hover:before:duration-200 row-hover:before:ease-out-expo",
       )}
     >
       <CompanyLogo name={job.company} src={job.logoUrl} size={compact ? 22 : 34} />
@@ -64,7 +82,7 @@ export function JobRow({
       <div
         className={cn(
           "min-w-0 flex-1 transition-[padding] duration-150 ease-out-quint",
-          onAction && "group-hover:pr-[100px]",
+          onAction && "group-row-hover:pr-[100px]",
         )}
       >
         <div className="flex min-w-0 items-center gap-2">
@@ -72,7 +90,7 @@ export function JobRow({
             className={cn(
               "truncate font-medium transition-colors",
               compact ? "text-sm" : "text-base",
-              selected ? "text-fg" : "text-fg/90",
+              selected ? "text-fg" : "text-fg/90 group-row-hover:text-fg",
             )}
           >
             {job.title}
@@ -86,9 +104,11 @@ export function JobRow({
             <span className="min-w-0 truncate text-fg-2">{job.company}</span>
             <Sep />
             {job.place ? (
-              <span className="flex min-w-0 items-center gap-1 text-fg-2" title={`In your ${job.place.label} area`}>
+              <span className="flex min-w-0 items-center gap-1 text-fg-2">
                 <MapPin className="size-3 shrink-0 text-brand-hi" />
-                <span className="truncate">{job.location}</span>
+                <Hint label={job.location} detail={`In your ${job.place.label} area`} side="top">
+                  <span className="min-w-0 truncate">{job.location}</span>
+                </Hint>
               </span>
             ) : (
               <span className="truncate">{job.location}</span>
@@ -104,9 +124,9 @@ export function JobRow({
       </div>
 
       {compact ? null : job.place ? (
-        <PlaceChip label={job.place.label} className="hidden @xl:inline-flex group-hover:hidden" />
+        <PlaceChip label={job.place.label} className="hidden @xl:inline-flex group-row-hover:hidden" />
       ) : (
-        <RemoteChip remote={job.remote} className="hidden @xl:inline-flex group-hover:hidden" />
+        <RemoteChip remote={job.remote} className="hidden @xl:inline-flex group-row-hover:hidden" />
       )}
 
       <div className="flex w-14 shrink-0 flex-col items-end gap-1">
@@ -115,24 +135,33 @@ export function JobRow({
         ) : job.prescore != null ? (
           <PrescoreMeter value={job.prescore} />
         ) : null}
-        {compact ? null : <span className="text-2xs tnum text-fg-4">{formatAge(job.ageHours)}</span>}
+        {compact ? null : (
+          <Hint label={formatAgeLong(job.ageHours)} side="left">
+            <span className="text-2xs tnum text-fg-4">{formatAge(job.ageHours)}</span>
+          </Hint>
+        )}
       </div>
 
       {onAction ? (
         <div
           className={cn(
             "pointer-events-none absolute right-[72px] top-1/2 flex -translate-y-1/2 items-center gap-0.5",
-            "rounded-lg border border-line-2 bg-surface-3 p-0.5 opacity-0 shadow-pop",
-            "transition-[opacity,translate] duration-150 ease-out-quint group-hover:pointer-events-auto group-hover:opacity-100",
+            "translate-x-3 rounded-lg border border-line-2 bg-surface-3 p-0.5 opacity-0 shadow-pop",
+            "transition-[opacity,translate] duration-150 ease-out-quint group-row-hover:pointer-events-auto group-row-hover:translate-x-0 group-row-hover:opacity-100",
           )}
         >
-          <QuickAction label="Shortlist (S)" onClick={() => onAction("shortlist")}>
+          <QuickAction label="Shortlist" shortcut="S" onClick={() => onAction("shortlist")}>
             <Bookmark />
           </QuickAction>
-          <QuickAction label="Skip (X)" onClick={() => onAction("skip")}>
+          <QuickAction label="Skip" shortcut="X" onClick={() => onAction("skip")} className="group-row-hover:delay-30">
             <X />
           </QuickAction>
-          <QuickAction label="Open posting (O)" onClick={() => onAction("open")}>
+          <QuickAction
+            label="Open posting"
+            shortcut="O"
+            onClick={() => onAction("open")}
+            className="group-row-hover:delay-60"
+          >
             <ArrowUpRight />
           </QuickAction>
         </div>

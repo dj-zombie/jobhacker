@@ -1,7 +1,10 @@
 /**
  * Stand-in marks for `?logos=demo`. Geometric shapes only, in the tile colors.
  * Never a real company's logo: the sample data uses real company names.
+ * A host page that sets `demoHooks.logos` supplies the URLs instead (the public demo).
  */
+
+import { demoHooks } from "./demo-hooks";
 
 const TILES = ["#6d5dfc", "#3b74f0", "#0b8fb0", "#0f8f7a", "#2f8f45", "#c27712", "#d9466f", "#5b6478"];
 
@@ -41,6 +44,7 @@ export function placeholderMark(seed: string): string {
 
 /** A placeholder for about half of companies, or null so the tile stays a monogram. */
 export function demoLogoUrl(company: string): string | null {
+  if (demoHooks.logos) return demoHooks.logos.tile(company);
   if (!LOGOS_DEMO) return null;
   const h = hash(company);
   if (h % 2 === 1) return null;
@@ -50,8 +54,15 @@ export function demoLogoUrl(company: string): string | null {
   return mark(bg);
 }
 
+/** The header's cover. The stand-ins have one image per company, so it's the tile's. */
+export function demoCoverUrl(company: string): string | null {
+  if (demoHooks.logos) return demoHooks.logos.cover(company);
+  return demoLogoUrl(company);
+}
+
 /** The same companies' stand-in symbol: the shape alone, as Brandfetch's `type=symbol`. */
 export function demoSymbolUrl(company: string, ink: "white" | "black" = "white"): string | null {
+  if (demoHooks.logos) return demoHooks.logos.symbol(company, ink);
   if (!demoLogoUrl(company)) return null;
   const xml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 44 44">${glyph(company, ink)}</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(xml)}`;
@@ -63,6 +74,7 @@ export function demoSymbolUrl(company: string, ink: "white" | "black" = "white")
  * White ink is the light logo. Black ink is the dark logo.
  */
 export function demoWordmarkUrl(company: string, ink: "white" | "black" = "white"): string | null {
+  if (demoHooks.logos) return demoHooks.logos.wordmark(company, ink);
   if (!demoLogoUrl(company)) return null;
   const name = company.toLowerCase();
   const textW = Math.round(name.length * 21);

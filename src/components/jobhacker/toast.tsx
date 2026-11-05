@@ -9,6 +9,7 @@ import { Kbd } from "./kbd";
  * Mount once in the root layout. Styled entirely from tokens. Sonner centers
  * its loader absolutely inside the icon box, so the box keeps `relative` and a
  * fixed size; a loading toast also sweeps a progress line along its bottom edge.
+ * A toast glitches in with clip-path slices only: its transform and opacity are Sonner's.
  */
 export function AppToaster() {
   return (
@@ -21,13 +22,13 @@ export function AppToaster() {
         unstyled: true,
         classNames: {
           toast:
-            "flex w-[min(440px,calc(100vw-32px))] items-center gap-3 rounded-xl border border-line-2 bg-surface-3/95 px-3.5 py-3 text-sm text-fg shadow-pop backdrop-blur-md",
+            "flex w-[min(440px,calc(100vw-32px))] animate-glitch-clip items-center gap-3 rounded-xl border border-line-2 border-l-brand-hi bg-surface-3/95 px-3.5 py-3 text-sm text-fg shadow-pop backdrop-blur-md",
           loading: "progress-sweep",
           title: "font-medium text-fg",
           description: "mt-0.5 text-xs text-fg-3",
           icon: "relative flex size-4 shrink-0 items-center justify-center [&_svg]:size-4",
           actionButton:
-            "ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-surface-4 px-2.5 text-xs font-medium text-fg ring-1 ring-inset ring-line-2 transition-colors hover:bg-surface-2",
+            "group/btn ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-surface-4 px-2.5 text-xs font-medium text-fg ring-1 ring-inset ring-line-2 transition-colors hover:bg-surface-2 hover:text-brand-hi hover:ring-uv-hi/50",
         },
       }}
     />

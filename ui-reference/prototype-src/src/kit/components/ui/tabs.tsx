@@ -38,7 +38,7 @@ function TabsTrigger({ className, value, children, ...props }: React.ComponentPr
       className={cn(
         "relative -mb-px inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap px-3 text-sm font-medium text-fg-3 outline-none",
         "transition-colors duration-150 hover:text-fg-2 data-[state=active]:text-fg",
-        "focus-visible:rounded-md focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand-hi",
+        "focus-visible:rounded-md focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-uv-hi",
         className,
       )}
       {...props}
@@ -47,7 +47,7 @@ function TabsTrigger({ className, value, children, ...props }: React.ComponentPr
       {active ? (
         <motion.span
           layoutId={`${ctx.id}-underline`}
-          className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-brand-hi"
+          className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-brand-hi shadow-neon"
           transition={{ type: "spring", stiffness: 520, damping: 40 }}
         />
       ) : null}

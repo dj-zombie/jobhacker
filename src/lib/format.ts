@@ -20,3 +20,16 @@ export function formatAge(hoursAgo: number): string {
   if (d < 14) return `${d}d`;
   return `${Math.round(d / 7)}w`;
 }
+
+/** The words behind formatAge. Same buckets: "First seen 3 days ago". */
+export function formatAgeLong(hoursAgo: number): string {
+  if (hoursAgo < 1) return "First seen under an hour ago";
+  if (hoursAgo < 24) {
+    const hours = Math.round(hoursAgo);
+    return `First seen ${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+  }
+  const days = Math.round(hoursAgo / 24);
+  if (days < 14) return `First seen ${days} ${days === 1 ? "day" : "days"} ago`;
+  const weeks = Math.round(days / 7);
+  return `First seen ${weeks} ${weeks === 1 ? "week" : "weeks"} ago`;
+}

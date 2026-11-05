@@ -4,6 +4,7 @@ import {
   CompanyHeader,
   FillReadiness,
   FillReport,
+  Hint,
   RemoteChip,
   ScorePill,
   toast,
@@ -304,23 +305,35 @@ export function ApplicationWorkspace({
             <ArrowUpRight />
             <span className="max-sm:hidden">Open posting</span>
           </a>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void fill()}
-            disabled={filling || submitted}
+          <Hint
+            label="Open & fill"
+            detail="Fills the form in your Chrome. Nothing is submitted: you look it over and click submit."
+            side="bottom"
           >
-            {filling ? <LoaderCircle className="animate-spin" /> : <Wand2 />}
-            {filling ? 'Filling in Chrome' : 'Open & fill'}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => void markSubmitted()}
-            disabled={submitted || submitting || filling}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void fill()}
+              disabled={filling || submitted}
+            >
+              {filling ? <LoaderCircle className="animate-spin" /> : <Wand2 />}
+              {filling ? 'Filling in Chrome' : 'Open & fill'}
+            </Button>
+          </Hint>
+          <Hint
+            label="Mark submitted"
+            detail="For after you submit it in Chrome. Records when, and sets a follow-up reminder."
+            side="bottom"
           >
-            {submitted ? <Check /> : <Send />}
-            {submitted ? 'Submitted' : 'Mark submitted'}
-          </Button>
+            <Button
+              size="sm"
+              onClick={() => void markSubmitted()}
+              disabled={submitted || submitting || filling}
+            >
+              {submitted ? <Check /> : <Send />}
+              {submitted ? 'Submitted' : 'Mark submitted'}
+            </Button>
+          </Hint>
         </div>
       </div>
 

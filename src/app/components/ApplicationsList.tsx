@@ -70,7 +70,9 @@ export function ApplicationsList({ list }: { list: ApplicationList }) {
   const header = (count?: number) => (
     <PageHeader
       icon={meta.icon}
+      kicker="Applications"
       title={meta.title}
+      art="/art/deck-hacker.webp"
       count={count}
       leading={<MobileNavButton />}
       actions={
@@ -183,13 +185,13 @@ function StageCard({
         <Icon className={cn('size-4', stage.tone)} />
       </span>
       <span className="min-w-0">
-        <span className="block text-2xs text-fg-3">{stage.label}</span>
+        <span className="hud-label block text-fg-3">{stage.label}</span>
         <span className="block text-xl font-semibold leading-tight tnum text-fg">{count}</span>
       </span>
     </>
   );
   const base =
-    'surface-card flex w-full items-center gap-3 rounded-xl p-3.5 text-left transition-colors';
+    'surface-card chamfer relative flex w-full items-center gap-3 rounded-xl p-3.5 text-left transition-colors';
   if (!stage.href) {
     return <div className={cn(base, count === 0 && 'opacity-70')}>{body}</div>;
   }
@@ -197,7 +199,13 @@ function StageCard({
     <Link
       href={stage.href}
       aria-current={active ? 'page' : undefined}
-      className={cn(base, active ? 'ring-1 ring-brand/40' : 'hover:bg-surface-2')}
+      className={cn(
+        base,
+        'outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-uv-hi',
+        active
+          ? 'ring-1 ring-brand/40 [--chamfer-edge:var(--color-brand)]'
+          : 'hover:bg-surface-2 hover:row-wash',
+      )}
     >
       {body}
     </Link>
@@ -210,7 +218,10 @@ function Row({ row, clientId }: { row: ApplicationRowView; clientId: string | nu
     <li>
       <Link
         href={`/applications/${row.applicationId}`}
-        className="group flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-surface-2"
+        className={cn(
+          'group relative flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-surface-2 hover:row-wash',
+          'before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:scale-y-0 before:bg-brand-hi before:transition-transform before:duration-200 before:ease-out-expo hover:before:scale-y-100',
+        )}
       >
         <CompanyTile
           name={row.company}

@@ -20,8 +20,8 @@ function Slider({ className, ...props }: React.ComponentProps<typeof SliderPrimi
           key={i}
           className={cn(
             "block size-4 rounded-full border-2 border-brand-hi bg-fg shadow-glow outline-none",
-            "transition-transform duration-150 ease-out-quint hover:scale-110 active:scale-95",
-            "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-hi",
+            "transition-[transform,box-shadow] duration-150 ease-out-quint hover:scale-110 hover:shadow-neon active:scale-95",
+            "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-uv-hi",
           )}
         />
       ))}

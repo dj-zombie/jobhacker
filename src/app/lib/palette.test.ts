@@ -105,6 +105,24 @@ describe('kit color tokens in globals.css', () => {
     }
   });
 
+  it('keeps the brand apart from the status colors (D150)', () => {
+    const brandRows = rows.filter((r) => r.check === 'brand vs status');
+    expect(brandRows.map((r) => r.pair)).toEqual([
+      'brand / danger',
+      'brand / info',
+      'brand-hi / danger',
+      'brand-hi / info',
+    ]);
+    expect(brandRows.every((r) => r.result === 'PASS')).toBe(true);
+    const near = (hex: string) =>
+      paletteChecks({ ...colors, danger: parseHex(hex) }, [], []).find(
+        (r) => r.check === 'brand vs status' && r.pair === 'brand / danger',
+      )?.result;
+    expect(near('dc1435')).toBe('FAIL');
+    expect(near('e83a4f')).toBe('WARN'); // ΔE 6.5 from the brand
+    expect(near('ff6b6b')).toBe('PASS');
+  });
+
   it('never turns a FAIL into ACCEPTED, or a WARN into KNOWN', () => {
     const failing = { ...colors, danger: colors.maybe ?? [0, 0, 0] };
     const entry = {

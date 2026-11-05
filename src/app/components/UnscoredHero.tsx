@@ -55,9 +55,9 @@ export function UnscoredHero({
               : 'Scoring goes by prescore, so model calls go to the likeliest fits first.'}{' '}
             Each batch is capped at {formatCount(summary.cap)}.
           </p>
-          <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-surface-4" aria-hidden>
+          <div className="mt-3.5 h-1.5 overflow-hidden bg-surface-4" aria-hidden>
             <div
-              className="h-full rounded-full bg-linear-to-r from-brand-lo to-brand-hi transition-[width] duration-700 ease-out-expo"
+              className="h-full bg-linear-to-r from-brand-lo to-brand-hi transition-[width] duration-700 ease-out-expo [clip-path:polygon(0_0,100%_0,calc(100%-6px)_100%,0_100%)]"
               style={{ width: `${Math.max(pct, 1)}%` }}
             />
           </div>
@@ -70,7 +70,7 @@ export function UnscoredHero({
               <b className="font-semibold tnum text-fg">{formatCount(summary.waiting)}</b> waiting
             </span>
             <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex items-center gap-1 rounded-sm outline-none hover:text-fg-2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand-hi">
+              <DropdownMenuTrigger className="inline-flex items-center gap-1 rounded-sm outline-none hover:text-fg-2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-uv-hi">
                 <b className="font-semibold tnum text-fg">{formatCount(summary.gated)}</b> removed
                 by the four gates
                 <ChevronDown aria-hidden className="size-3" />

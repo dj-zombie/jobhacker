@@ -21,7 +21,12 @@ export function TriagePage({ view }: { view: View }) {
   if (!config.ok) {
     return (
       <>
-        <PageHeader title={TITLE[view]} leading={<MobileNavButton />} />
+        <PageHeader
+          kicker="Triage"
+          title={TITLE[view]}
+          art="/art/deck-skull.webp"
+          leading={<MobileNavButton />}
+        />
         <EmptyState
           icon={TriangleAlert}
           title="The config has an error"

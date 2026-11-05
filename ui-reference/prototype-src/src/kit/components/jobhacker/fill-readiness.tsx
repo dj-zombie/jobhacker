@@ -65,18 +65,19 @@ export function FillReadiness({
             {done}
             <span className="text-fg-4">/{total}</span>
           </div>
-          <div className="mt-1 text-2xs text-fg-3">fields filled</div>
+          <div className="hud-label mt-1 text-fg-3">fields filled</div>
         </div>
       </div>
 
-      <div className="mt-4 flex h-2 gap-0.5" role="img" aria-label={`${filled} filled, ${review} need review, ${blank} blank`}>
+      <div
+        className="mt-4 flex h-2 gap-0.5 [clip-path:polygon(0_0,100%_0,calc(100%-8px)_100%,0_100%)]"
+        role="img"
+        aria-label={`${filled} filled, ${review} need review, ${blank} blank`}
+      >
         {segs.map((s) => (
           <div
             key={s.key}
-            className={cn(
-              "h-full rounded-full transition-[flex-grow] duration-500 ease-out-expo first:rounded-l-full",
-              s.cls,
-            )}
+            className={cn("h-full transition-[flex-grow] duration-500 ease-out-expo", s.cls)}
             style={{ flexGrow: s.n, flexBasis: 0, minWidth: s.n > 0 ? 6 : 0 }}
           />
         ))}

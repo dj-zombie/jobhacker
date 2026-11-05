@@ -48,6 +48,24 @@ describe('moveLegacyDb', () => {
     expect(readFileSync(`${target}-wal`, 'utf8')).toBe('already moved');
   });
 
+  it('removes an empty leftover instead of warning', () => {
+    const root = tmp();
+    const legacy = join(root, 'old.db');
+    const target = join(root, 'jobhacker.db');
+    writeFileSync(legacy, '');
+    writeFileSync(`${legacy}-wal`, '');
+    writeFileSync(`${legacy}-shm`, 'index');
+    writeFileSync(target, 'new');
+    const logs: string[] = [];
+
+    expect(moveLegacyDb(target, (m) => logs.push(m), legacy)).toEqual([]);
+    expect(existsSync(legacy)).toBe(false);
+    expect(existsSync(`${legacy}-wal`)).toBe(false);
+    expect(existsSync(`${legacy}-shm`)).toBe(false);
+    expect(readFileSync(target, 'utf8')).toBe('new');
+    expect(logs).toEqual([]);
+  });
+
   it('leaves both alone when the new database already exists, and warns', () => {
     const root = tmp();
     const legacy = join(root, 'old.db');

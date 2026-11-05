@@ -1,0 +1,334 @@
+{
+  "about": "Written by `pnpm demo:record` (scripts/record-demo-fill.ts). The real filler on site/form/sample-form.html, as the fictional candidate in site/demo-profile.yaml. Re-record after changing either.",
+  "formSha256": "fa08353d87cbbff4b36a654f3dbdf423dcc020b33a9c62474d61b0ff68c0cf5c",
+  "ats": "greenhouse",
+  "url": "https://jobhacker.space/form/",
+  "fillMs": 511,
+  "colors": {
+    "review": "#f59e0b",
+    "blank": "#e11d48"
+  },
+  "steps": [
+    {
+      "id": "first_name",
+      "label": "First Name *",
+      "kind": "text",
+      "value": "Kris",
+      "mark": null
+    },
+    {
+      "id": "last_name",
+      "label": "Last Name *",
+      "kind": "text",
+      "value": "Tester",
+      "mark": null
+    },
+    {
+      "id": "email",
+      "label": "Email *",
+      "kind": "text",
+      "value": "kris@example.com",
+      "mark": null
+    },
+    {
+      "id": "phone",
+      "label": "Phone *",
+      "kind": "text",
+      "value": "+1 555 010 0199",
+      "mark": null
+    },
+    {
+      "id": "location",
+      "label": "Location (City) *",
+      "kind": "text",
+      "value": "Portland, OR",
+      "mark": null
+    },
+    {
+      "id": "resume",
+      "label": "Resume/CV *",
+      "kind": "file",
+      "value": "Kris_Tester_Resume.pdf",
+      "mark": null
+    },
+    {
+      "id": "linkedin",
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "value": "https://linkedin.com/in/kris-tester",
+      "mark": null
+    },
+    {
+      "id": "github",
+      "label": "GitHub",
+      "kind": "text",
+      "value": "https://github.com/kris-tester",
+      "mark": null
+    },
+    {
+      "id": "website",
+      "label": "Website",
+      "kind": "text",
+      "value": "https://example.com",
+      "mark": null
+    },
+    {
+      "id": "work_auth",
+      "label": "Are you legally authorized to work in the United States? *",
+      "kind": "select",
+      "value": "yes",
+      "mark": null
+    },
+    {
+      "id": "sponsorship",
+      "label": "Will you now or in the future require sponsorship for employment visa status? *",
+      "kind": "select",
+      "value": "no",
+      "mark": null
+    },
+    {
+      "id": "start_date",
+      "label": "Earliest start date",
+      "kind": "text",
+      "value": "Two weeks from offer",
+      "mark": null
+    },
+    {
+      "id": "hear",
+      "label": "How did you hear about this job?",
+      "kind": "text",
+      "value": "Company careers page",
+      "mark": null
+    },
+    {
+      "id": "why",
+      "label": "Why do you want to work here? *",
+      "kind": "text",
+      "value": "I want to own features from schema to pixels at a product company with a real design culture. At Fabrikam I lead frontend for the fleet-tracking platform, a React and Go app used by 400 logistics teams, and I rebuilt its live map and vehicle list for speed. This role asks for that same mix of craft and performance work.",
+      "mark": "review"
+    },
+    {
+      "id": "salary",
+      "label": "What are your salary expectations? *",
+      "kind": "none",
+      "value": "",
+      "mark": "blank"
+    },
+    {
+      "id": "gender",
+      "label": "Gender",
+      "kind": "select",
+      "value": "decline",
+      "mark": null
+    },
+    {
+      "id": "hispanic",
+      "label": "Are you Hispanic or Latino?",
+      "kind": "select",
+      "value": "decline",
+      "mark": null
+    },
+    {
+      "id": "race",
+      "label": "Race",
+      "kind": "select",
+      "value": "decline",
+      "mark": null
+    },
+    {
+      "id": "veteran",
+      "label": "Veteran status",
+      "kind": "select",
+      "value": "decline",
+      "mark": null
+    },
+    {
+      "id": "disability",
+      "label": "Disability status",
+      "kind": "select",
+      "value": "decline",
+      "mark": null
+    },
+    {
+      "id": "consent",
+      "label": "I confirm the information in this application is accurate. *",
+      "kind": "none",
+      "value": "",
+      "mark": "blank"
+    }
+  ],
+  "report": {
+    "fields": [
+      {
+        "id": "filled-0",
+        "label": "Resume/CV *",
+        "value": "Kris_Tester_Resume.pdf",
+        "state": "filled",
+        "source": "resume"
+      },
+      {
+        "id": "filled-1",
+        "label": "First Name *",
+        "value": "Kris",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-2",
+        "label": "Last Name *",
+        "value": "Tester",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-3",
+        "label": "Email *",
+        "value": "kris@example.com",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-4",
+        "label": "Phone *",
+        "value": "+1 555 010 0199",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-5",
+        "label": "Location (City) *",
+        "value": "Portland, OR",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-6",
+        "label": "LinkedIn Profile",
+        "value": "https://linkedin.com/in/kris-tester",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-7",
+        "label": "GitHub",
+        "value": "https://github.com/kris-tester",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-8",
+        "label": "Website",
+        "value": "https://example.com",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-9",
+        "label": "Are you legally authorized to work in the United States? *",
+        "value": "Yes",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-10",
+        "label": "Will you now or in the future require sponsorship for employment visa status? *",
+        "value": "No",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-11",
+        "label": "Earliest start date",
+        "value": "Two weeks from offer",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-12",
+        "label": "How did you hear about this job?",
+        "value": "Company careers page",
+        "state": "filled",
+        "source": "profile"
+      },
+      {
+        "id": "filled-13",
+        "label": "Why do you want to work here? *",
+        "value": "I want to own features from schema to pixels at a product company with a real design culture. At Fabrikam I lead frontend for the fleet-tracking platform, a React and Go app used by 400 logistics teams, and I rebuilt its live map and vehicle list for speed. This role asks for that same mix of craft and performance work.",
+        "state": "review",
+        "source": "drafted"
+      },
+      {
+        "id": "blank-0",
+        "label": "What are your salary expectations? *",
+        "state": "blank",
+        "required": true,
+        "note": "[NEEDS INPUT]"
+      },
+      {
+        "id": "blank-1",
+        "label": "Who referred you to this role?",
+        "state": "blank",
+        "required": false,
+        "note": "Needs your input: who referred you, if anyone"
+      },
+      {
+        "id": "blank-2",
+        "label": "I confirm the information in this application is accurate. *",
+        "state": "blank",
+        "required": true,
+        "note": "A checkbox for you to tick"
+      },
+      {
+        "id": "self-id-0",
+        "label": "Gender",
+        "value": "Decline to self-identify",
+        "state": "filled",
+        "source": "self-id"
+      },
+      {
+        "id": "self-id-1",
+        "label": "Are you Hispanic or Latino?",
+        "value": "Decline to self-identify",
+        "state": "filled",
+        "source": "self-id"
+      },
+      {
+        "id": "self-id-2",
+        "label": "Race",
+        "value": "Decline to self-identify",
+        "state": "filled",
+        "source": "self-id"
+      },
+      {
+        "id": "self-id-3",
+        "label": "Veteran status",
+        "value": "I don't wish to answer",
+        "state": "filled",
+        "source": "self-id"
+      },
+      {
+        "id": "self-id-4",
+        "label": "Disability status",
+        "value": "I don't wish to answer",
+        "state": "filled",
+        "source": "self-id"
+      }
+    ],
+    "filled": 18,
+    "review": 1,
+    "blank": 3,
+    "requiredBlank": 2,
+    "resumeAttached": true,
+    "selfIdNote": "This form has no self-identification questions."
+  },
+  "draft": {
+    "questions": [
+      "Why do you want to work here?",
+      "Who referred you to this role?"
+    ],
+    "answered": 1,
+    "needsInput": 1,
+    "rejected": 0
+  },
+  "submits": 0
+}

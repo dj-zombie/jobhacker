@@ -1,5 +1,5 @@
 import 'server-only';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import type { Band } from '@/components/jobhacker';
 import { attachedResume } from '../../core/apply/apply.js';
 import { isStandardKey } from '../../core/apply/field-map.js';
@@ -20,7 +20,13 @@ import {
 import { LOGO_TILE_PX } from '../../core/brand/logo-url.js';
 import { companyLogoSrc } from '../../core/brand/site-icon.js';
 import { ConfigError } from '../../core/config/errors.js';
-import { loadAllConfig } from '../../core/config/load.js';
+import {
+  DEFAULT_CONFIG_DIR,
+  loadAllConfig,
+  loadConfigFile,
+  loadPreferences,
+} from '../../core/config/load.js';
+import { toSectionInputs } from '../../core/config/profile-sections.js';
 import {
   type Bands,
   type Criteria,
@@ -28,7 +34,10 @@ import {
   type Profile,
   REMOTE_AREA,
   type Weights,
+  criteriaSchema,
+  profileSchema,
 } from '../../core/config/schemas.js';
+import { costPerScore, currentScoreCount } from '../../core/config/staleness.js';
 import { DEFAULT_DB_PATH, type Db, openExistingDb } from '../../core/db/client.js';
 import { applicationsRepo } from '../../core/db/repo/applications.js';
 import { domainsRepo } from '../../core/db/repo/domains.js';
@@ -79,6 +88,12 @@ import { systemClock } from '../../core/util/clock.js';
 import { normalizeCompanyName } from '../../core/util/hash.js';
 import { activityGroups, shortDate } from './activity.js';
 import { type QueueItem, compLabel, locationLabel, remoteTypeOf } from './format.js';
+import type {
+  RescoreBasisView,
+  SettingsData,
+  SettingsDataFor,
+  SettingsRoute,
+} from './settings-types.js';
 import type { PaletteJob, ScoutCardView, ScoutRunView, ShellCounts } from './shell-types.js';
 import {
   type PlaceInfo,
@@ -920,4 +935,60 @@ export function getLlmCallCount(): number {
 
 export function getScoutHeader(): ScoutHeader {
   return orEmpty(() => withDb((db) => scoutHeader(db, systemClock)), { present: false });
+}
+
+/**
+ * One Settings route's data (J18). Each route reads only its own sections: the Self-ID answers
+ * reach the Self-ID page and no other. A config error comes back as the file's name and its
+ * issues, never a path outside `config/`.
+ */
+export function getSettings(route: 'profile'): SettingsDataFor<'profile'>;
+export function getSettings(route: 'answers'): SettingsDataFor<'answers'>;
+export function getSettings(route: 'self-id'): SettingsDataFor<'self-id'>;
+export function getSettings(route: 'preferences'): SettingsDataFor<'preferences'>;
+export function getSettings(route: SettingsRoute): SettingsData {
+  try {
+    if (route === 'preferences') {
+      return {
+        ok: true,
+        route,
+        preferences: loadPreferences(DEFAULT_CONFIG_DIR),
+        rescore: rescoreBasis(),
+      };
+    }
+    const inputs = toSectionInputs(loadConfigFile('profile', profileSchema, DEFAULT_CONFIG_DIR));
+    if (route === 'answers') return { ok: true, route, answers: inputs.standard_answers };
+    if (route === 'self-id') return { ok: true, route, selfId: inputs.self_identification };
+    const { contact, links, summary, skills, experience, education } = inputs;
+    return {
+      ok: true,
+      route,
+      profile: { contact, links, summary, skills, experience, education },
+      rescore: rescoreBasis(),
+    };
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      return { ok: false, route, file: basename(err.file), issues: err.issues };
+    }
+    throw err;
+  }
+}
+
+/** How many current scores a key change would make stale, and what a score costs now. */
+function rescoreBasis(): RescoreBasisView {
+  const criteria = loadConfigFile('criteria', criteriaSchema, DEFAULT_CONFIG_DIR);
+  const config = {
+    criteria,
+    profile: loadConfigFile('profile', profileSchema, DEFAULT_CONFIG_DIR),
+    preferences: loadPreferences(DEFAULT_CONFIG_DIR),
+  };
+  const counted = orEmpty(
+    () =>
+      withDb((db) => ({
+        current: currentScoreCount(db, systemClock, config),
+        basis: costPerScore(db, systemClock, criteria.llm.scoring_model),
+      })),
+    { current: 0, basis: null },
+  );
+  return { ...counted, perRun: criteria.budget.max_new_scores_per_run };
 }

@@ -6,7 +6,11 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DimensionRow } from "./types";
 
-function Meter({ value }: { value: number | null }) {
+/**
+ * A 0–5 bar with a chamfered tip. The fill is full width and slides in from the
+ * left (transform only), so the tip keeps its shape at every value.
+ */
+function Meter({ value, index }: { value: number | null; index: number }) {
   const reduce = useReducedMotion();
   if (value == null) {
     return (
@@ -16,12 +20,12 @@ function Meter({ value }: { value: number | null }) {
     );
   }
   return (
-    <div className="h-1.5 overflow-hidden rounded-full bg-surface-4">
+    <div className="h-1.5 overflow-hidden bg-surface-4">
       <motion.div
-        className="h-full rounded-full bg-linear-to-r from-brand-lo to-brand-hi"
-        initial={{ width: 0 }}
-        animate={{ width: `${(value / 5) * 100}%` }}
-        transition={reduce ? { duration: 0 } : { duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className="h-full bg-linear-to-r from-brand-lo to-brand-hi [clip-path:polygon(0_0,100%_0,calc(100%-6px)_100%,0_100%)]"
+        initial={{ x: "-100%" }}
+        animate={{ x: `${(value / 5 - 1) * 100}%` }}
+        transition={reduce ? { duration: 0 } : { duration: 0.64, ease: [0.16, 1, 0.3, 1], delay: index * 0.04 }}
       />
     </div>
   );
@@ -30,6 +34,7 @@ function Meter({ value }: { value: number | null }) {
 /**
  * The "why it's here" table: each dimension's 0–5 score, its weight, the
  * points it contributed, and the model's reason (click a row to expand it).
+ * Bars slide in one after another; a hovered row locks corner brackets on.
  */
 export function DimensionBreakdown({
   rows,
@@ -44,7 +49,7 @@ export function DimensionBreakdown({
 
   return (
     <div className={className}>
-      <div className="mb-1 hidden grid-cols-[96px_1fr_44px_40px_48px] gap-3 px-1 text-2xs text-fg-4 sm:grid">
+      <div className="hud-label mb-1 hidden grid-cols-[96px_1fr_44px_40px_48px] gap-3 px-1 tracking-wide text-fg-4 sm:grid">
         <span>Dimension</span>
         <span>Fit</span>
         <span>Score</span>
@@ -52,7 +57,7 @@ export function DimensionBreakdown({
         <span className="text-right">Points</span>
       </div>
       <ul className="divide-y divide-line">
-        {rows.map((row) => {
+        {rows.map((row, index) => {
           const expanded = open === row.key;
           return (
             <li key={row.key}>
@@ -60,7 +65,7 @@ export function DimensionBreakdown({
                 type="button"
                 aria-expanded={expanded}
                 onClick={() => setOpen(expanded ? null : row.key)}
-                className="group w-full rounded-md px-1 py-2.5 text-left transition-colors hover:bg-surface-2/60"
+                className="group hud-corners relative w-full rounded-md px-1 py-2.5 text-left transition-colors hover:hud-on hover:bg-surface-2/60 hover:row-wash [--hud-x:-2px] [--hud-y:0px]"
               >
                 <div className="grid grid-cols-[88px_1fr_40px] items-center gap-3 sm:grid-cols-[96px_1fr_44px_40px_48px]">
                   <span className="flex items-center gap-1 text-sm font-medium text-fg-2">
@@ -72,7 +77,7 @@ export function DimensionBreakdown({
                       )}
                     />
                   </span>
-                  <Meter value={row.score} />
+                  <Meter value={row.score} index={index} />
                   <span className="text-sm tnum text-fg">
                     {row.score ?? "—"}
                     <span className="text-fg-4">/5</span>

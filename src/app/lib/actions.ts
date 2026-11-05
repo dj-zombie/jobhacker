@@ -15,12 +15,23 @@ import { moveBoard, setCompanyActive } from '../../core/config/companies-file.js
 import { saveRanking, saveWeights } from '../../core/config/criteria-file.js';
 import { ConfigError, DEFAULT_CONFIG_DIR, loadAllConfig } from '../../core/config/load.js';
 import {
+  type ProfileSection,
+  type SectionInputs,
+  isProfileSection,
+} from '../../core/config/profile-sections.js';
+import {
   BOARD_ATS,
   type Bands,
   type BoardAts,
   type Criteria,
   type Weights,
 } from '../../core/config/schemas.js';
+import {
+  type SettingsDeps,
+  type SettingsSaveResult,
+  savePreferencesSettings,
+  saveProfileSettings,
+} from '../../core/config/settings.js';
 import { DEFAULT_BACKUP_DIR } from '../../core/db/backup.js';
 import { createDb, openExistingDb } from '../../core/db/client.js';
 import { applicationsRepo } from '../../core/db/repo/applications.js';
@@ -899,4 +910,60 @@ export async function recordBrandDomain(
   } finally {
     sqlite.close();
   }
+}
+
+/**
+ * Save one profile section (J18). When the edit changes the score cache key and `confirmRescore`
+ * is false, nothing is written and the result carries the re-score notice's numbers. The value is
+ * validated in core whatever its type says. Nothing here logs a value from the profile, and a
+ * refusal names a field path, never a file or a value.
+ */
+export async function saveProfileSectionAction<S extends ProfileSection>(
+  section: S,
+  value: SectionInputs[S],
+  confirmRescore: boolean,
+): Promise<SettingsSaveResult<SectionInputs[S]>> {
+  if (!isProfileSection(section)) {
+    return { status: 'refused', error: 'There is no such profile section.', issues: [] };
+  }
+  return settingsSave((deps) => saveProfileSettings(deps, section, value, confirmRescore));
+}
+
+/** Save `preferences.md`, on the same terms as a profile section. */
+export async function savePreferencesAction(
+  text: string,
+  confirmRescore: boolean,
+): Promise<SettingsSaveResult<string>> {
+  return settingsSave((deps) => savePreferencesSettings(deps, text, confirmRescore));
+}
+
+function settingsSave<T>(
+  save: (deps: SettingsDeps) => SettingsSaveResult<T>,
+): SettingsSaveResult<T> {
+  let result: SettingsSaveResult<T>;
+  try {
+    const { db, sqlite } = openExistingDb();
+    try {
+      result = save({ db, clock: systemClock, dir: DEFAULT_CONFIG_DIR });
+    } finally {
+      sqlite.close();
+    }
+  } catch (err) {
+    const reason = errorCode(err);
+    createLogger().error(`settings save failed: ${reason}`);
+    return {
+      status: 'refused',
+      error: `Saving failed (${reason}). Nothing was saved.`,
+      issues: [],
+    };
+  }
+  if (result.status === 'saved' && result.changed) revalidateShell();
+  return result;
+}
+
+/** An error's code or name and never its message, which can quote a line of the file. */
+function errorCode(err: unknown): string {
+  if (!(err instanceof Error)) return 'unknown error';
+  const code = 'code' in err && typeof err.code === 'string' ? err.code : null;
+  return code ?? err.name;
 }

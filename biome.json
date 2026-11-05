@@ -16,6 +16,7 @@
       "output",
       "coverage",
       "ui-reference",
+      "site/src/fill-recording.json",
       "docs/archive",
       "*.example.yaml",
       "*.css"

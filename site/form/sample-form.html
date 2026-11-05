@@ -1,0 +1,163 @@
+<!--
+  The demo's sample application form (J21). Plain Greenhouse-style markup. `pnpm demo:record`
+  runs the real filler on it in headless Chrome, and /form/ replays that run. After changing
+  this file, run `pnpm demo:record`: the recording keeps this file's sha256, and a test fails
+  when they differ. The form has no action and its submit button is disabled; /form/ also
+  cancels the submit event.
+-->
+<form id="application_form" class="sample-form" novalidate>
+  <header class="border-b border-paper-line pb-5">
+    <p class="text-xs font-medium tracking-wide text-paper-ink-2 uppercase">Example Co.</p>
+    <h1 class="mt-1 text-xl font-semibold text-paper-ink">Senior Product Engineer</h1>
+    <p class="mt-1 text-sm text-paper-ink-2">Remote (US) · Full-time</p>
+    <p class="mt-3 rounded-md bg-paper-line/60 px-3 py-2 text-xs text-paper-ink-2">
+      A sample form for the JobHacker demo. It isn't a real job, and it can't be submitted.
+    </p>
+  </header>
+
+  <div class="grid gap-4 pt-5 sm:grid-cols-2">
+    <div class="field">
+      <label for="first_name">First Name *</label>
+      <input type="text" id="first_name" name="first_name" autocomplete="off" required />
+    </div>
+    <div class="field">
+      <label for="last_name">Last Name *</label>
+      <input type="text" id="last_name" name="last_name" autocomplete="off" required />
+    </div>
+    <div class="field">
+      <label for="email">Email *</label>
+      <input type="email" id="email" name="email" autocomplete="off" required />
+    </div>
+    <div class="field">
+      <label for="phone">Phone *</label>
+      <input type="tel" id="phone" name="phone" autocomplete="off" required />
+    </div>
+    <div class="field sm:col-span-2">
+      <label for="location">Location (City) *</label>
+      <input type="text" id="location" name="location" autocomplete="off" required />
+    </div>
+    <div class="field sm:col-span-2">
+      <label for="resume">Resume/CV *</label>
+      <input type="file" id="resume" name="resume" accept=".pdf" required />
+    </div>
+    <div class="field sm:col-span-2">
+      <label for="linkedin">LinkedIn Profile</label>
+      <input type="url" id="linkedin" name="linkedin" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="github">GitHub</label>
+      <input type="url" id="github" name="github" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="website">Website</label>
+      <input type="url" id="website" name="website" autocomplete="off" />
+    </div>
+  </div>
+
+  <div class="grid gap-4 border-t border-paper-line pt-5 mt-6">
+    <div class="field">
+      <label for="work_auth">Are you legally authorized to work in the United States? *</label>
+      <select id="work_auth" name="work_auth" required>
+        <option value="">Please select</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="sponsorship">Will you now or in the future require sponsorship for employment visa status? *</label>
+      <select id="sponsorship" name="sponsorship" required>
+        <option value="">Please select</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="start_date">Earliest start date</label>
+      <input type="text" id="start_date" name="start_date" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="hear">How did you hear about this job?</label>
+      <input type="text" id="hear" name="hear" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="why">Why do you want to work here? *</label>
+      <textarea id="why" name="why" rows="6" required></textarea>
+    </div>
+    <div class="field">
+      <label for="salary">What are your salary expectations? *</label>
+      <input type="text" id="salary" name="salary" autocomplete="off" required />
+    </div>
+    <div class="field">
+      <label for="referral">Who referred you to this role?</label>
+      <input type="text" id="referral" name="referral" autocomplete="off" />
+    </div>
+  </div>
+
+  <fieldset class="mt-6 grid gap-4 border-t border-paper-line pt-5">
+    <legend class="float-left w-full pt-5 text-base font-semibold text-paper-ink">Voluntary Self-Identification</legend>
+    <p class="text-xs leading-relaxed text-paper-ink-2">
+      Answering is voluntary and won't affect your application. You can decline any question.
+    </p>
+    <div class="field">
+      <label for="gender">Gender</label>
+      <select id="gender" name="gender">
+        <option value="">Please select</option>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+        <option value="non_binary">Non-binary</option>
+        <option value="decline">Decline to self-identify</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="hispanic">Are you Hispanic or Latino?</label>
+      <select id="hispanic" name="hispanic">
+        <option value="">Please select</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+        <option value="decline">Decline to self-identify</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="race">Race</label>
+      <select id="race" name="race">
+        <option value="">Please select</option>
+        <option value="american_indian">American Indian or Alaska Native</option>
+        <option value="asian">Asian</option>
+        <option value="black">Black or African American</option>
+        <option value="pacific_islander">Native Hawaiian or Other Pacific Islander</option>
+        <option value="white">White</option>
+        <option value="two_or_more">Two or more races</option>
+        <option value="decline">Decline to self-identify</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="veteran">Veteran status</label>
+      <select id="veteran" name="veteran">
+        <option value="">Please select</option>
+        <option value="not_protected">I am not a protected veteran</option>
+        <option value="protected">I identify as one or more of the classifications of protected veteran</option>
+        <option value="decline">I don't wish to answer</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="disability">Disability status</label>
+      <select id="disability" name="disability">
+        <option value="">Please select</option>
+        <option value="yes">Yes, I have a disability (or previously had a disability)</option>
+        <option value="no">No, I don't have a disability</option>
+        <option value="decline">I don't wish to answer</option>
+      </select>
+    </div>
+  </fieldset>
+
+  <div class="mt-6 border-t border-paper-line pt-5">
+    <div class="consent">
+      <input type="checkbox" id="consent" name="consent" required />
+      <label for="consent">I confirm the information in this application is accurate. *</label>
+    </div>
+    <div class="mt-5 flex flex-wrap items-center gap-3">
+      <button type="submit" disabled class="sample-submit">Submit application</button>
+      <span class="text-xs text-paper-ink-2">Switched off: this is a sample.</span>
+    </div>
+  </div>
+</form>

@@ -1,6 +1,9 @@
+"use client";
+
 import type * as React from "react";
 import { Globe, Building2, MapPin, Shuffle, HelpCircle, CircleOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "./hint";
 import type { RemoteType, TriageState } from "./types";
 
 const REMOTE: Record<RemoteType, { label: string; icon: React.ElementType; cls: string }> = {
@@ -13,7 +16,7 @@ const REMOTE: Record<RemoteType, { label: string; icon: React.ElementType; cls: 
 export function RemoteChip({ remote, className }: { remote: RemoteType; className?: string }) {
   const r = REMOTE[remote];
   const Icon = r.icon;
-  return (
+  const chip = (
     <span
       className={cn(
         "inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-2xs font-medium ring-1 ring-inset",
@@ -24,6 +27,12 @@ export function RemoteChip({ remote, className }: { remote: RemoteType; classNam
       <Icon className="size-3" />
       {r.label}
     </span>
+  );
+  if (remote !== "unknown") return chip;
+  return (
+    <Hint label="Unclear" detail="The posting doesn't say whether this is remote, hybrid or on-site.">
+      {chip}
+    </Hint>
   );
 }
 
@@ -54,27 +63,35 @@ export function StateChip({ state, className }: { state: TriageState; className?
 /** A posting the sources no longer list. The word carries it; the color does not. */
 export function ClosedChip({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-danger-wash px-1.5 text-2xs font-medium text-danger ring-1 ring-inset ring-danger/25",
-        className,
-      )}
-    >
-      <CircleOff className="size-3" />
-      Closed
-    </span>
+    <Hint label="Closed" detail="The sources no longer list this posting.">
+      <span
+        className={cn(
+          "inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-danger-wash px-1.5 text-2xs font-medium text-danger ring-1 ring-inset ring-danger/25",
+          className,
+        )}
+      >
+        <CircleOff className="size-3" />
+        Closed
+      </span>
+    </Hint>
   );
 }
 
 /** Thin 0–1 meter for the lexical prescore on unscored jobs. */
 export function PrescoreMeter({ value, className }: { value: number; className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5", className)} title={`Prescore ${value.toFixed(2)}`}>
-      <span className="h-1 w-8 overflow-hidden rounded-full bg-surface-4">
-        <span className="block h-full rounded-full bg-fg-3" style={{ width: `${Math.round(value * 100)}%` }} />
+    <Hint
+      label={`Prescore ${value.toFixed(2)}`}
+      detail="Decides when this job gets scored. It never excludes it."
+      side="top"
+    >
+      <span className={cn("inline-flex items-center gap-1.5", className)}>
+        <span className="h-1 w-8 overflow-hidden bg-surface-4">
+          <span className="block h-full bg-fg-3" style={{ width: `${Math.round(value * 100)}%` }} />
+        </span>
+        <span className="font-mono text-2xs tnum text-fg-3">{value.toFixed(2)}</span>
       </span>
-      <span className="text-2xs tnum text-fg-3">{value.toFixed(2)}</span>
-    </span>
+    </Hint>
   );
 }
 
@@ -86,14 +103,16 @@ export function Sep() {
 /** Marks a job that's in one of the user's places. Brand-colored: it's "yours". */
 export function PlaceChip({ label, className }: { label: string; className?: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-brand-wash px-1.5 text-2xs font-medium text-brand-hi ring-1 ring-inset ring-brand/25",
-        className,
-      )}
-    >
-      <MapPin className="size-3" />
-      {label}
-    </span>
+    <Hint label={`In your ${label} area`}>
+      <span
+        className={cn(
+          "inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-brand-wash px-1.5 text-2xs font-medium text-brand-hi ring-1 ring-inset ring-brand/25",
+          className,
+        )}
+      >
+        <MapPin className="size-3" />
+        {label}
+      </span>
+    </Hint>
   );
 }

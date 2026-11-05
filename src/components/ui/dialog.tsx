@@ -28,13 +28,17 @@ function DialogContent({
       <DialogPrimitive.Content
         className={cn(
           "fixed left-1/2 top-[14vh] z-50 w-[calc(100vw-32px)] max-w-lg -translate-x-1/2",
-          "rounded-xl border border-line-2 bg-surface-2 text-fg shadow-pop outline-none",
+          "chamfer rounded-xl border border-line-2 bg-surface-2 text-fg shadow-pop outline-none",
           "data-[state=open]:animate-dialog-in",
           className,
         )}
         {...props}
       >
         {children}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 z-1 h-px origin-left animate-power-on bg-linear-to-r from-transparent via-brand-hi to-transparent"
+        />
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   );

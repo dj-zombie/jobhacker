@@ -16,9 +16,16 @@ import {
 } from '@/components/jobhacker';
 import { CompanyLogo } from '@/components/jobhacker/company-logo';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { formatCompact, formatCount } from '@/lib/format';
+import { type SidebarPreference, sidebarCookie, sidebarIsRail } from '@/lib/sidebar-preference';
 import { useMediaQuery } from '@/lib/use-media-query';
 import {
   BellRing,
@@ -30,13 +37,18 @@ import {
   Inbox,
   Keyboard,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PowerOff,
   Radar,
   RefreshCw,
   Rows3,
   Send,
+  Settings,
   SlidersHorizontal,
   Sparkles,
   TriangleAlert,
+  X,
 } from 'lucide-react';
 import { MotionConfig } from 'motion/react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -92,6 +104,7 @@ const SHORTCUTS: ShortcutGroup[] = [
     heading: 'Anywhere',
     items: [
       { keys: ['⌘', 'K'], label: 'Search and commands' },
+      { keys: ['⌘', 'B'], label: 'Collapse or expand the sidebar' },
       { keys: ['?'], label: 'This list' },
       { keys: ['Esc'], label: 'Close panel or dialog' },
     ],
@@ -226,6 +239,9 @@ export function MobileNavButton() {
 
 const TRIAGE_PATHS: readonly string[] = Object.values(TRIAGE_PATH);
 
+/** Settings opens on its first section (J18). */
+export const SETTINGS_HREF = '/settings/profile';
+
 const APPLICATION_LISTS: readonly string[] = [
   '/applications/submitted',
   '/applications/follow-ups',
@@ -242,6 +258,7 @@ export function activeHrefFor(pathname: string, view: string | null): string {
   if (APPLICATION_LISTS.includes(pathname)) return pathname;
   if (pathname === '/applications' || pathname.startsWith('/applications/')) return '/applications';
   if (pathname === '/companies') return '/companies';
+  if (pathname === '/settings' || pathname.startsWith('/settings/')) return SETTINGS_HREF;
   return '';
 }
 
@@ -317,6 +334,7 @@ function sectionsFor(
       label: 'Setup',
       items: [
         { href: '/companies', label: 'Company logos', icon: Images, count: logosMissing },
+        { href: SETTINGS_HREF, label: 'Settings', icon: Settings },
         { label: 'Start fresh', icon: Eraser, onSelect: onStartFresh },
       ],
     },
@@ -351,6 +369,8 @@ interface ShellProps {
   logos?: { clientId: string | null; names: string[] };
   /** Places a triage URL uses when `where` is absent. */
   whereDefault?: string[];
+  /** Pinned on a wide window. The root layout reads it from the cookie. */
+  sidebar?: SidebarPreference;
   children?: React.ReactNode;
 }
 
@@ -401,6 +421,7 @@ function ShellFrame({
   query,
   onTriage,
   whereDefault = [],
+  sidebar = 'expanded',
   children,
 }: ShellProps & { activeHref: string; query: string; onTriage: boolean }) {
   const router = useRouter();
@@ -462,7 +483,18 @@ function ShellFrame({
     return () => ctl.abort();
   }, [onTriage, lastWhere, counts, pushed, setCounts]);
   const logoEditor = useLogoEditor();
-  const collapsed = useMediaQuery('(max-width: 1279px)');
+  const [sidebarPreference, setSidebarPreference] = React.useState(sidebar);
+  const narrow = useMediaQuery('(max-width: 1279px)');
+  const collapsed = sidebarIsRail(narrow, sidebarPreference);
+  const toggleSidebar = React.useCallback(() => {
+    // Below 1280 the rail is already the layout. Don't pin a choice the window can't show.
+    if (narrow) return;
+    setSidebarPreference((prev) => {
+      const next: SidebarPreference = prev === 'rail' ? 'expanded' : 'rail';
+      document.cookie = sidebarCookie(next);
+      return next;
+    });
+  }, [narrow]);
   // Unmounted on phones, as in the reference: a hidden copy would also hold the brand mark's
   // gradient id, and the drawer's mark would resolve to the hidden one and paint nothing.
   const phone = useMediaQuery('(max-width: 767px)');
@@ -776,6 +808,7 @@ function ShellFrame({
 
   useHotkeys({
     'mod+k': () => setPaletteOpen((open) => !open),
+    'mod+b': () => toggleSidebar(),
     '?': () => setShortcutsOpen((open) => !open),
   });
 
@@ -784,18 +817,21 @@ function ShellFrame({
     router.push(paletteJobHref(query, job, whereDefault));
   };
 
+  const jobGroup: PaletteGroup | null =
+    paletteJobs.length === 0
+      ? null
+      : {
+          heading: 'Jobs',
+          items: paletteJobs.map((job) => ({
+            id: `job-${job.id}`,
+            label: job.title,
+            keywords: [job.company, job.location],
+            hint: `${job.company} · ${job.score}`,
+            icon: <CompanyLogo name={job.company} src={job.logoUrl} size={20} />,
+            onSelect: () => jumpToJob(job),
+          })),
+        };
   const paletteGroups: PaletteGroup[] = [
-    {
-      heading: 'Jobs',
-      items: paletteJobs.map((job) => ({
-        id: `job-${job.id}`,
-        label: job.title,
-        keywords: [job.company, job.location],
-        hint: `${job.company} · ${job.score}`,
-        icon: <CompanyLogo name={job.company} src={job.logoUrl} size={20} />,
-        onSelect: () => jumpToJob(job),
-      })),
-    },
     {
       heading: 'Go to',
       items: [
@@ -847,6 +883,13 @@ function ShellFrame({
           icon: <Images className="size-4 text-fg-3" />,
           onSelect: () => router.push('/companies'),
         },
+        {
+          id: 'go-settings',
+          label: 'Settings',
+          keywords: ['profile', 'answers', 'self-id', 'preferences'],
+          icon: <Settings className="size-4 text-fg-3" />,
+          onSelect: () => router.push(SETTINGS_HREF),
+        },
       ],
     },
     {
@@ -876,6 +919,19 @@ function ShellFrame({
           onSelect: () => toggleStoredDensity(),
         },
         {
+          id: 'act-sidebar',
+          label: sidebarPreference === 'rail' ? 'Expand sidebar' : 'Collapse sidebar',
+          keywords: ['navigation', 'rail', 'icon'],
+          icon:
+            sidebarPreference === 'rail' ? (
+              <PanelLeftOpen className="size-4 text-fg-3" />
+            ) : (
+              <PanelLeftClose className="size-4 text-fg-3" />
+            ),
+          shortcut: ['⌘', 'B'],
+          onSelect: () => toggleSidebar(),
+        },
+        {
           id: 'act-keys',
           label: 'Keyboard shortcuts',
           icon: <Keyboard className="size-4 text-fg-3" />,
@@ -884,6 +940,7 @@ function ShellFrame({
         },
       ],
     },
+    ...(jobGroup ? [jobGroup] : []),
   ];
   const sections = sectionsFor(shown, query, logoEditor.missing ?? shown?.logos, openReset);
   const footer = (c: boolean) =>
@@ -941,6 +998,7 @@ function ShellFrame({
                   sections={sections}
                   activeHref={activeHref}
                   collapsed={collapsed}
+                  onToggleCollapsed={toggleSidebar}
                   onSearch={openPalette}
                   footer={footer(collapsed)}
                   user={user ?? undefined}
@@ -948,14 +1006,6 @@ function ShellFrame({
                 />
               )}
               <main className="relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-card max-md:m-0 max-md:rounded-none max-md:border-0">
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute -top-48 left-[20%] h-96 w-[720px] max-w-full rounded-full opacity-70 blur-3xl"
-                  style={{
-                    background:
-                      'radial-gradient(closest-side, color-mix(in oklab, var(--color-brand) 16%, transparent), transparent)',
-                  }}
-                />
                 <LogoLookup
                   clientId={logos?.clientId ?? null}
                   names={logos?.names ?? []}
@@ -967,7 +1017,7 @@ function ShellFrame({
 
             <Dialog open={mobileNav} onOpenChange={setMobileNav}>
               <DialogContent
-                className="left-0 top-0 h-full w-[280px] max-w-none translate-x-0 rounded-none rounded-r-xl border-y-0 border-l-0 p-0 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] data-[state=open]:animate-drawer-in"
+                className="left-0 top-0 h-full w-[280px] max-w-none translate-x-0 rounded-none rounded-r-xl border-y-0 border-l-0 p-0 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] [--chamfer:0px] data-[state=open]:animate-drawer-in"
                 overlayClassName="bg-black/60"
               >
                 <DialogTitle className="sr-only">Navigation</DialogTitle>
@@ -1031,6 +1081,16 @@ function ShellFrame({
   );
 }
 
+const focusRing =
+  'outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-uv-hi';
+
+function boardCause(name: string, text: string): string {
+  const prefix = `${name}: `;
+  const rest = text.startsWith(prefix) ? text.slice(prefix.length) : text;
+  if (!rest) return 'This board failed in the last run.';
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
 function TurnOffBoardDialog({
   target,
   busy,
@@ -1046,21 +1106,49 @@ function TurnOffBoardDialog({
 }) {
   return (
     <Dialog open={target != null} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent className="max-w-md">
-        <DialogTitle className="text-md font-semibold text-fg">
-          {target ? `Turn off ${target.name}?` : 'Turn off this board?'}
-        </DialogTitle>
-        <DialogDescription className="mt-2 text-sm text-fg-2">
-          {target?.text} Later scouts skip this board. Jobs already stored stay, including any you
-          shortlisted. To watch it again, set <span className="font-medium">active: true</span> for
-          this board in companies.yaml.
-        </DialogDescription>
-        {error ? <p className="mt-3 text-xs text-danger">{error}</p> : null}
-        <div className="mt-4 flex justify-end gap-2">
+      <DialogContent className="max-w-md p-0">
+        <div className="scanlines-light flex items-start gap-3 border-b border-line px-5 py-4">
+          <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-danger-wash ring-1 ring-danger/25">
+            <PowerOff className="size-4 text-danger" />
+          </span>
+          <div className="min-w-0 pt-0.5">
+            <DialogTitle className="text-md font-semibold text-fg">
+              {target ? `Turn off ${target.name}?` : 'Turn off this board?'}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-xs leading-5 text-fg-3">
+              {target ? boardCause(target.name, target.text) : 'This board failed in the last run.'}
+            </DialogDescription>
+          </div>
+          <DialogClose
+            disabled={busy}
+            tabIndex={-1}
+            className={`ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-3 hover:bg-surface-3 hover:text-fg ${focusRing}`}
+          >
+            <X className="size-4" />
+            <span className="sr-only">Close</span>
+          </DialogClose>
+        </div>
+        <div className="space-y-2 px-5 py-4 text-sm leading-5 text-fg-2">
+          <p>Later scouts skip this board.</p>
+          <p>Jobs already stored stay, including any you shortlisted.</p>
+          <p>
+            To watch it again, set{' '}
+            <code className="rounded bg-surface-3 px-1 py-px font-mono text-xs text-fg">
+              active: true
+            </code>{' '}
+            for this board in{' '}
+            <code className="whitespace-nowrap rounded bg-surface-3 px-1 py-px font-mono text-xs text-fg">
+              companies.yaml
+            </code>
+            {'.'}
+          </p>
+        </div>
+        {error ? <p className="px-5 pb-3 text-xs text-danger">{error}</p> : null}
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button
             type="button"
-            variant="ghost"
-            size="sm"
+            variant="outline"
+            className={focusRing}
             disabled={busy}
             onClick={() => onOpenChange(false)}
           >
@@ -1068,8 +1156,8 @@ function TurnOffBoardDialog({
           </Button>
           <Button
             type="button"
-            variant="secondary"
-            size="sm"
+            variant="destructive"
+            className={focusRing}
             disabled={busy || target == null}
             onClick={onConfirm}
           >

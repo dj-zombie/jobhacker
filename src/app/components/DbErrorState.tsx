@@ -9,6 +9,7 @@ export function DbErrorState({ health }: { health: Extract<DbHealth, { ok: false
     <>
       <PageHeader icon={DatabaseZap} title="No database" leading={<MobileNavButton />} />
       <EmptyState
+        still
         icon={DatabaseZap}
         title="JobHacker can't open its database"
         body={

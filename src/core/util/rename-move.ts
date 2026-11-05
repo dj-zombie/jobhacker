@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -24,6 +24,13 @@ export function moveLegacyDb(
 ): string[] {
   if (!existsSync(legacyPath)) return [];
   if (existsSync(newPath)) {
+    if (emptyLegacyLeftover(legacyPath)) {
+      for (const suffix of ['-wal', '-shm', '']) {
+        const from = `${legacyPath}${suffix}`;
+        if (existsSync(from)) unlinkSync(from);
+      }
+      return [];
+    }
     log(
       `both ${newPath} and the pre-JobHacker ${legacyPath} exist. Using ${newPath}; the old file is untouched. If your jobs are missing, they're in the old file.`,
     );
@@ -39,6 +46,13 @@ export function moveLegacyDb(
   }
   log(`moved the database to ${newPath}: ${moved.join(', ')}`);
   return moved;
+}
+
+/** A 0-byte main file with no WAL contents is not a database. Its shm index can still be 32KB. */
+function emptyLegacyLeftover(legacyPath: string): boolean {
+  if (statSync(legacyPath).size > 0) return false;
+  const wal = `${legacyPath}-wal`;
+  return !existsSync(wal) || statSync(wal).size === 0;
 }
 
 export type ChromeProfileMove =

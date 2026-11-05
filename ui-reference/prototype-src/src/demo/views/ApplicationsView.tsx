@@ -7,6 +7,7 @@ import { demoLogoUrl } from "../logos";
 import { bandFor, rank } from "../model";
 import { navigate } from "../router";
 import type { AppStatus } from "../data";
+import deckHacker from "@/art/deck-hacker.webp";
 
 const STATUS: Record<AppStatus, { label: string; cls: string }> = {
   prepped: { label: "Prepped", cls: "bg-brand-wash text-brand-hi ring-brand/25" },
@@ -61,7 +62,9 @@ export function ApplicationsView({ filter }: { filter: "in-progress" | "submitte
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         icon={filter === "submitted" ? Send : filter === "follow-ups" ? BellRing : FileText}
+        kicker="Applications"
         title={title}
+        art={deckHacker}
         count={rows.length}
         leading={
           isMobile ? (
@@ -94,8 +97,9 @@ export function ApplicationsView({ filter }: { filter: "in-progress" | "submitte
                     disabled={!st.href}
                     onClick={() => st.href && navigate(st.href)}
                     className={cn(
-                      "surface-card flex w-full items-center gap-3 rounded-xl p-3.5 text-left transition-colors",
-                      active ? "ring-1 ring-brand/40" : "hover:bg-surface-2",
+                      "surface-card chamfer relative flex w-full items-center gap-3 rounded-xl p-3.5 text-left transition-colors",
+                      "outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-uv-hi",
+                      active ? "ring-1 ring-brand/40 [--chamfer-edge:var(--color-brand)]" : "hover:bg-surface-2 hover:row-wash",
                       !st.href && "cursor-default opacity-70",
                     )}
                   >
@@ -103,7 +107,7 @@ export function ApplicationsView({ filter }: { filter: "in-progress" | "submitte
                       <Icon className={cn("size-4", st.tone)} />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-2xs text-fg-3">{st.label}</span>
+                      <span className="hud-label block text-fg-3">{st.label}</span>
                       <span className="block text-xl font-semibold leading-tight tnum text-fg">{st.n}</span>
                     </span>
                   </button>
@@ -136,7 +140,10 @@ export function ApplicationsView({ filter }: { filter: "in-progress" | "submitte
                   <button
                     type="button"
                     onClick={() => navigate(`/applications/${app.id}`)}
-                    className="group flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-surface-2"
+                    className={cn(
+                      "group relative flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-surface-2 hover:row-wash",
+                      "before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:scale-y-0 before:bg-brand-hi before:transition-transform before:duration-200 before:ease-out-expo hover:before:scale-y-100",
+                    )}
                   >
                     <CompanyLogo name={job.company} src={demoLogoUrl(job.company)} size={36} />
                     <div className="min-w-0 flex-1">

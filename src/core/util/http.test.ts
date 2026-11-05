@@ -45,7 +45,9 @@ describe('createHttp', () => {
       typeof pkg === 'object' && pkg !== null && 'version' in pkg && typeof pkg.version === 'string'
         ? pkg.version
         : '';
-    expect(USER_AGENT).toBe(`JobHacker/${version} (personal job search tool)`);
+    expect(USER_AGENT).toBe(
+      `JobHacker/${version} (personal job search tool; +https://jobhacker.space)`,
+    );
   });
 
   it('retries a 500 then succeeds, backing off and still spacing the host', async () => {

@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Hint,
   JobDetail,
   PageHeader,
   type TriageAction,
@@ -196,17 +197,21 @@ export function JobDeepLink({
     <>
       <PageHeader
         icon={Briefcase}
+        kicker="Triage"
         title="Job"
+        art="/art/deck-skull.webp"
         leading={
           <>
             <MobileNavButton />
-            <Link
-              href="/"
-              aria-label="Back to Top matches"
-              className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
-            >
-              <ArrowLeft aria-hidden />
-            </Link>
+            <Hint label="Back to Top matches" side="bottom">
+              <Link
+                href="/"
+                aria-label="Back to Top matches"
+                className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+              >
+                <ArrowLeft aria-hidden />
+              </Link>
+            </Hint>
           </>
         }
         actions={

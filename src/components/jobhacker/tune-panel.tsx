@@ -3,6 +3,7 @@
 import { RotateCcw, Save, SlidersHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { Hint } from "./hint";
 import { ScoreHistogram } from "./score-histogram";
 import { BandDot } from "./score";
 import type { DimKey } from "./types";
@@ -49,7 +50,11 @@ export function TunePanel({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-3 border-b border-line px-5 py-4 max-md:px-4">
+      <header className="scanlines-light relative flex items-center gap-3 border-b border-line px-5 py-4 max-md:px-4">
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 -bottom-px h-px origin-left animate-power-on bg-linear-to-r from-transparent via-brand-hi to-transparent"
+        />
         <span className="inline-flex size-9 items-center justify-center rounded-lg bg-brand-wash ring-1 ring-inset ring-brand/30">
           <SlidersHorizontal className="size-4 text-brand-hi" />
         </span>
@@ -57,19 +62,27 @@ export function TunePanel({
           <h2 className="text-md font-semibold tracking-tight text-fg">Tune ranking</h2>
           <p className="text-xs text-fg-3">Drag a weight and watch the list re-rank.</p>
         </div>
-        <span className="ml-auto hidden items-center gap-1.5 rounded-full bg-strong-wash px-2 py-1 text-2xs font-medium text-strong ring-1 ring-inset ring-strong/25 sm:inline-flex">
-          <span className="size-1.5 rounded-full bg-strong text-strong animate-pulse-dot" />
-          Live · <span className="tnum">{apiCalls}</span> API calls
-        </span>
-        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close tuning">
-          <X />
-        </Button>
+        <Hint
+          label="Live"
+          detail="A weight change re-ranks on this machine. It doesn't call the model."
+          side="bottom"
+        >
+          <span className="ml-auto hidden items-center gap-1.5 rounded-full bg-strong-wash px-2 py-1 text-2xs font-medium text-strong ring-1 ring-inset ring-strong/25 sm:inline-flex">
+            <span className="h-1.5 w-2.5 bg-strong text-strong shadow-[0_0_6px_currentColor]" />
+            Live · <span className="tnum">{apiCalls}</span> API calls
+          </span>
+        </Hint>
+        <Hint label="Close tuning" side="bottom">
+          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close tuning">
+            <X />
+          </Button>
+        </Hint>
       </header>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 max-md:p-4">
         <section className="surface-card rounded-xl p-4">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-sm font-semibold text-fg">Score distribution</h3>
+            <h3 className="hud-label text-fg-2">Score distribution</h3>
             <div className="flex items-center gap-3 text-2xs text-fg-3">
               <span className="inline-flex items-center gap-1.5">
                 <BandDot band="strong" /> Strong <b className="font-semibold tnum text-fg">{bandCounts.strong}</b>
@@ -86,7 +99,7 @@ export function TunePanel({
         </section>
 
         <section className="surface-card rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-fg">Weights</h3>
+          <h3 className="hud-label text-fg-2">Weights</h3>
           <p className="mt-0.5 text-xs text-fg-3">How much each dimension counts. Only the ratios matter.</p>
           <div className="mt-4 space-y-4">
             {DIMENSIONS.map((d) => (
@@ -96,7 +109,7 @@ export function TunePanel({
                     {d.label}
                   </label>
                   <span className="truncate text-xs text-fg-3">{d.hint}</span>
-                  <span className="ml-auto text-sm font-semibold tnum text-fg">×{weights[d.key]}</span>
+                  <span className="ml-auto font-mono text-sm font-semibold tnum text-fg">×{weights[d.key]}</span>
                 </div>
                 <Slider
                   id={`w-${d.key}`}
@@ -113,7 +126,7 @@ export function TunePanel({
         </section>
 
         <section className="surface-card rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-fg">Bands</h3>
+          <h3 className="hud-label text-fg-2">Bands</h3>
           <p className="mt-0.5 text-xs text-fg-3">Where a match turns from weak to maybe, and maybe to strong.</p>
           <div className="mt-4 space-y-4">
             <div>

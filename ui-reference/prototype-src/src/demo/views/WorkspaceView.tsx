@@ -26,8 +26,9 @@ import {
   type TimelineGroup,
 } from "@/components/jobhacker";
 import { useDemo } from "../App";
+import { demoHooks } from "../demo-hooks";
 import { openLogoPicker } from "../logo-store";
-import { demoLogoUrl, demoSymbolUrl, demoWordmarkUrl } from "../logos";
+import { demoCoverUrl, demoLogoUrl, demoSymbolUrl, demoWordmarkUrl } from "../logos";
 import { bandFor, rank } from "../model";
 import { navigate } from "../router";
 import { COVER_NOTE, STANDARD_ANSWERS, TIMELINE_LINEAR } from "../data";
@@ -88,6 +89,14 @@ export function WorkspaceView({ appId }: { appId: string }) {
 
   const openAndFill = () => {
     setFilling(true);
+    const hosted = demoHooks.openAndFill;
+    if (hosted) {
+      hosted(app.id, (result) => {
+        setFilling(false);
+        if (result) toast(result.title, { description: result.description, icon: <Wand2 className="text-info" /> });
+      });
+      return;
+    }
     window.setTimeout(() => {
       setFilling(false);
       toast("Filled the application in Chrome", {
@@ -138,7 +147,7 @@ export function WorkspaceView({ appId }: { appId: string }) {
           title={job.title}
           titleAs="h1"
           artUrl={demoLogoUrl(job.company)}
-          coverUrl={demoLogoUrl(job.company)}
+          coverUrl={demoCoverUrl(job.company)}
           markOnDark={demoSymbolUrl(job.company, "white")}
           markOnLight={demoSymbolUrl(job.company, "black")}
           wordmarkOnDark={demoWordmarkUrl(job.company, "white")}

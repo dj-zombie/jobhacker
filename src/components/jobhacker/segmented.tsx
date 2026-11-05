@@ -13,7 +13,7 @@ export interface SegmentOption<T extends string> {
   dot?: string;
 }
 
-/** Pill-style view switcher with a sliding active background. */
+/** Pill-style view switcher with a sliding active background and its lit underline. */
 export function Segmented<T extends string>({
   value,
   onChange,
@@ -46,7 +46,7 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               "relative inline-flex h-8 max-md:min-h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium outline-none transition-colors",
-              "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand-hi",
+              "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-uv-hi",
               active ? "text-fg" : "text-fg-3 hover:text-fg-2",
             )}
           >
@@ -55,12 +55,16 @@ export function Segmented<T extends string>({
                 layoutId={`${id}-seg`}
                 className="absolute inset-0 rounded-md bg-surface-3 shadow-hairline ring-1 ring-line-2"
                 transition={{ type: "spring", stiffness: 560, damping: 42 }}
-              />
+              >
+                <span className="absolute inset-x-2.5 bottom-0 h-px bg-brand-hi shadow-neon" />
+              </motion.span>
             ) : null}
             {o.dot ? <span className={cn("relative size-1.5 rounded-full", o.dot)} /> : null}
             <span className="relative">{o.label}</span>
             {o.count != null ? (
-              <span className={cn("relative tnum", active ? "text-fg-2" : "text-fg-4")}>{formatCount(o.count)}</span>
+              <span className={cn("relative font-mono text-2xs tnum", active ? "text-fg-2" : "text-fg-4")}>
+                {formatCount(o.count)}
+              </span>
             ) : null}
           </button>
         );

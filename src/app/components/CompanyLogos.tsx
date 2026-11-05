@@ -104,7 +104,9 @@ export function CompanyLogos({ rows, clientId }: { rows: LogoCompany[]; clientId
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         icon={Images}
+        kicker="Setup"
         title="Company logos"
+        art="/art/deck-alien.webp"
         leading={<MobileNavButton />}
         actions={
           <span

@@ -17,7 +17,13 @@ export default async function WorkspacePage({ params }: { params: Promise<{ id: 
   if (!config.ok) {
     return (
       <>
-        <PageHeader icon={FileText} title="Application" leading={<MobileNavButton />} />
+        <PageHeader
+          icon={FileText}
+          kicker="Applications"
+          title="Application"
+          art="/art/deck-hacker.webp"
+          leading={<MobileNavButton />}
+        />
         <EmptyState
           icon={TriangleAlert}
           title="The config has an error"
@@ -35,7 +41,13 @@ export default async function WorkspacePage({ params }: { params: Promise<{ id: 
   if (!data) {
     return (
       <>
-        <PageHeader icon={FileText} title="Application" leading={<MobileNavButton />} />
+        <PageHeader
+          icon={FileText}
+          kicker="Applications"
+          title="Application"
+          art="/art/deck-hacker.webp"
+          leading={<MobileNavButton />}
+        />
         <EmptyState
           icon={Send}
           title="Application not found"

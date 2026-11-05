@@ -133,7 +133,7 @@ The rules and limits below were taken from Brandfetch's docs and pricing page on
 
 | Product | Called from | Auth | Free allowance | Used for |
 |---|---|---|---|---|
-| **Logo CDN**, `cdn.brandfetch.io` | Kris's browser, as `<img>` tags | The client ID, in `?c=` (`BRANDFETCH_CLIENT_ID`) | 1,000,000 requests a month, a soft cap. At most 1,000 requests per 5 minutes per IP, and 2,400 per customer | Logo tiles (J9), and the header's art, symbol and wordmark (J11) |
+| **Logo CDN**, `cdn.brandfetch.io` | Kris's browser, as `<img>` tags. The public demo's visitors' browsers, the same way (J21) | The client ID, in `?c=` (`BRANDFETCH_CLIENT_ID`). The demo has its own (`DEMO_BRANDFETCH_CLIENT_ID`) | 1,000,000 requests a month, a soft cap. At most 1,000 requests per 5 minutes per IP, and 2,400 per customer. Each client ID has its own | Logo tiles (J9), and the header's art, symbol and wordmark (J11) |
 | **Brand Search**, `api.brandfetch.io/v2/search/<name>` | Kris's browser: the triage lookup (J9) and the logo picker (J10) | The same client ID | 500,000 requests a month, a soft cap. At most 200 requests per 5 minutes per IP | A domain the job text didn't name (J9), and picking one (J10) |
 | **Brand API**, `api.brandfetch.io/v2/brands/domain/<domain>` | Not used yet | An API key, sent as a Bearer token, from Brandfetch's developer dashboard. It's separate from the client ID | 100 fetches **in total** on the free plan, not per month | Real banner images, a backlog item (ROADMAP § Backlog) |
 
@@ -147,6 +147,11 @@ The rules and limits below were taken from Brandfetch's docs and pricing page on
 - **A domain Kris types** (J10, D109) is not drawn from Brandfetch. His browser fetches that site's homepage and the tile hotlinks its `rel=icon` link. Images in the page body are ignored. The stored icon URL has to be https on that same registrable domain. The server does not fetch the site. A site that won't answer stays a letter.
 - **Most refusals name their reason** in an `x-bf-error` header, for example `hotlink_blocked`, `automated_traffic`, `quota_exceeded` or `client_id_invalid_signature`. A `429` for going over a per-IP or per-customer limit carries none.
 - **The client ID isn't a secret to Brandfetch:** it's in every logo URL the browser loads. It still lives only in `.env`, like a key (invariant 4), and never goes into git, docs, logs or STATUS.
+- **The public demo has its own client ID** (J21, D165). On jobhacker.space, each visitor's browser loads the sample companies' logos from the Logo CDN, so the demo uses a separate Brandfetch client, `DEMO_BRANDFETCH_CLIENT_ID`. Visitors count against its limits, never the app's.
+  - The build reads it from `.env` and puts it in the bundle, because every logo URL carries it. It never goes into git, docs, logs or STATUS.
+  - The build refuses when it equals `BRANDFETCH_CLIENT_ID`. `pnpm demo:deploy` refuses a build that contains the app's ID. With no demo ID, every tile shows its letter.
+  - The domains come from a committed map, `site/src/brand-domains.ts`. A sample company without an entry keeps its letter.
+  - The demo never calls Brand Search: its logo picker and Company logos page show invented marks and canned results.
 - **Nothing about Kris is sent:** only company names, in searches, and domains.
 - **No attribution is required.** Showing a logo to identify the company it belongs to is the fair use Brandfetch describes.
 - **The Brand API, for later:** Brandfetch's terms license what it returns for 30 days at most, and its images must be hotlinked, never downloaded.

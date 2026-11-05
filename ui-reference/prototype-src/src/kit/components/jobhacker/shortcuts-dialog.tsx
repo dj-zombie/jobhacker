@@ -22,7 +22,7 @@ export function ShortcutsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl p-0">
-        <div className="flex items-center gap-3 border-b border-line px-5 py-4">
+        <div className="scanlines-light flex items-center gap-3 border-b border-line px-5 py-4">
           <span className="inline-flex size-8 items-center justify-center rounded-lg bg-surface-3 ring-1 ring-line-2">
             <Keyboard className="size-4 text-brand-hi" />
           </span>
@@ -38,7 +38,7 @@ export function ShortcutsDialog({
         <div className="grid gap-x-8 gap-y-6 p-5 sm:grid-cols-2">
           {groups.map((g) => (
             <section key={g.heading}>
-              <h3 className="mb-2 text-2xs font-medium text-fg-4">{g.heading}</h3>
+              <h3 className="hud-label mb-2 text-fg-4">{g.heading}</h3>
               <ul className="space-y-1.5">
                 {g.items.map((it) => (
                   <li key={it.label} className="flex items-center gap-3 text-sm text-fg-2">

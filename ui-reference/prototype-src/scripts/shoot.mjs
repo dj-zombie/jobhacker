@@ -377,5 +377,68 @@ for (const [w, h, size, mobile] of [
   }
 }
 
+// Hover states (J17): a sidebar item, a palette item, and the scout card mid-run with its radar.
+{
+  const p = await page(1440, 900);
+  await p.getByRole("link", { name: /Unscored/ }).hover();
+  await p.waitForTimeout(400);
+  await shot(p, "43-nav-hover-1440");
+  await p.keyboard.press("Control+k");
+  await p.waitForTimeout(500);
+  await p.locator("[cmdk-item]").nth(2).hover();
+  await p.waitForTimeout(400);
+  await shot(p, "44-palette-hover-1440");
+  await p.keyboard.press("Escape");
+  await p.waitForTimeout(300);
+  await p.getByRole("button", { name: "Run scout" }).click();
+  await p.waitForTimeout(700);
+  await shot(p, "45-scout-running-1440");
+  await p.context().close();
+}
+
+// Settings (J18): each section at three sizes, the re-score notice, a refused email, a year-only date.
+const tab = (p, name) => p.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name, exact: true });
+for (const [w, h, size, mobile] of [
+  [1440, 900, "1440", false],
+  [1024, 768, "1024", false],
+  [390, 844, "390", true],
+]) {
+  const p = await page(w, h);
+  await nav(p, /^Settings$/, mobile);
+  await shot(p, `46-settings-profile-${size}`);
+  await tab(p, "Answers").click();
+  await p.waitForTimeout(800);
+  await shot(p, `47-settings-answers-${size}`);
+  await tab(p, "Self-ID").click();
+  await p.waitForTimeout(800);
+  await shot(p, `48-settings-self-id-${size}`);
+  await tab(p, "Preferences").click();
+  await p.waitForTimeout(800);
+  await shot(p, `49-settings-preferences-${size}`);
+  const prefs = p.getByLabel("preferences.md");
+  await prefs.fill(`${await prefs.inputValue()}\nI'd also take a lead role on a small team.\n`);
+  await p.getByRole("button", { name: "Save", exact: true }).click();
+  await p.waitForTimeout(500);
+  await shot(p, `50-settings-notice-${size}`);
+  await p.getByRole("button", { name: "Cancel" }).click();
+  await p.waitForTimeout(300);
+  await tab(p, "Profile").click();
+  await p.waitForTimeout(800);
+  await p.getByLabel("Email").fill("kris@example");
+  await p.locator('section[aria-labelledby="contact-title"]').getByRole("button", { name: "Save", exact: true }).click();
+  await p.waitForTimeout(300);
+  await shot(p, `51-settings-invalid-email-${size}`);
+  const northwind = p.getByText("Web Developer · Northwind Games");
+  await northwind.click();
+  await northwind.evaluate((el) => {
+    const entry = el.closest("details");
+    const scroller = el.closest(".overflow-y-auto");
+    if (entry && scroller) scroller.scrollTop += entry.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 16;
+  });
+  await p.waitForTimeout(400);
+  await shot(p, `52-settings-year-only-${size}`);
+  await p.context().close();
+}
+
 await browser.close();
 console.log("ERRORS:", errors.length ? errors.join("\n") : "none");

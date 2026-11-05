@@ -23,7 +23,7 @@ import {
   type DemoJob,
   type Dims,
 } from "./data";
-import { demoLogoUrl, demoSymbolUrl, demoWordmarkUrl } from "./logos";
+import { demoCoverUrl, demoLogoUrl, demoSymbolUrl, demoWordmarkUrl } from "./logos";
 
 export const KEYS: DimKey[] = ["role", "tech", "domain", "seniority", "logistics", "comp"];
 const LABEL: Record<DimKey, string> = {
@@ -131,7 +131,7 @@ export function toDetail(job: DemoJob, w: Weights, t: Thresholds): JobDetailData
   return {
     ...base,
     // The prototype has one stand-in per company. The app passes the 256 px URL here.
-    logoTileUrl: base.logoUrl,
+    logoTileUrl: demoCoverUrl(job.company),
     logoSymbolOnDarkUrl: demoSymbolUrl(job.company, "white"),
     logoSymbolOnLightUrl: demoSymbolUrl(job.company, "black"),
     logoWordmarkOnDarkUrl: demoWordmarkUrl(job.company, "white"),

@@ -5,6 +5,8 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Hint } from "./hint";
+import { RadarSweep } from "./radar";
 
 export interface ScoutProgress {
   done: number;
@@ -55,7 +57,7 @@ function noticeObject(notice: ScoutNoticeItem): NoticeObject {
 }
 
 const ring =
-  "outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-hi";
+  "outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-uv-hi";
 
 /** Paste a careers link for a gone board. The parent checks it; an error shows under the field. */
 function LinkField({
@@ -117,6 +119,9 @@ function LinkField({
   );
 }
 
+/** What Refresh listings does, for every tooltip on it. */
+export const REFRESH_LISTINGS_DETAIL = "Marks postings the sources no longer have as closed. No model call.";
+
 const STATUS_LABEL: Record<ScoutStatus, string> = {
   ok: "Scout healthy",
   attention: "Needs attention",
@@ -129,7 +134,10 @@ const STATUS_DOT: Record<ScoutStatus, string> = {
   failed: "bg-danger text-danger",
 };
 
-/** Scout status, Run scout, and Refresh listings, with live progress while running. */
+/**
+ * Scout status, Run scout, and Refresh listings, with live progress while running.
+ * While it runs, a radar sweeps and a square blinks hard in place of the soft status pulse.
+ */
 export function ScoutCard({
   lastRunLabel,
   boards,
@@ -167,56 +175,88 @@ export function ScoutCard({
   const dot = running ? "bg-brand text-brand" : STATUS_DOT[status];
 
   if (collapsed) {
+    const runLabel = running ? `Scouting, ${pct}%` : "Run scout";
+    const runDetail = running
+      ? `${progress.done} of ${progress.total}`
+      : [
+          STATUS_LABEL[status],
+          lastRunLabel === "Never" ? "No scout yet" : `Last run ${lastRunLabel}`,
+          ...notices.slice(0, 2).map(noticeText),
+        ].join(" · ");
     return (
       <div className="flex flex-col items-center gap-2">
-        <button
-          type="button"
-          onClick={onRun}
-          disabled={running}
-          aria-label={running ? `Scouting, ${pct}%` : `Run scout. ${STATUS_LABEL[status]}`}
-          title={running ? undefined : [STATUS_LABEL[status], ...notices.map(noticeText)].join("\n")}
-          className="relative mx-auto flex size-9 items-center justify-center rounded-lg border border-line bg-surface-1 text-fg-2 hover:text-fg"
-        >
-          <Radar className={cn("size-4", running && "animate-spin text-brand-hi [animation-duration:2.4s]")} />
-          <span className={cn("absolute right-1.5 top-1.5 size-1.5 rounded-full animate-pulse-dot", dot)} />
-        </button>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={running}
-          aria-label="Refresh listings"
-          title="Refresh listings"
-          className="mx-auto flex size-9 items-center justify-center rounded-lg border border-line bg-surface-1 text-fg-2 hover:text-fg disabled:opacity-50"
-        >
-          <RefreshCw className="size-4" />
-        </button>
+        <Hint label={runLabel} detail={runDetail} side="right">
+          <button
+            type="button"
+            aria-disabled={running || undefined}
+            aria-label={running ? `Scouting, ${pct}%` : `Run scout. ${STATUS_LABEL[status]}`}
+            onClick={() => {
+              if (!running) onRun();
+            }}
+            className={cn(
+              "relative mx-auto flex size-9 items-center justify-center rounded-lg border border-line bg-surface-1 text-fg-2 hover:text-fg",
+              running && "opacity-50",
+            )}
+          >
+            <Radar className={cn("size-4", running && "animate-spin text-brand-hi [animation-duration:2.4s]")} />
+            <span
+              className={cn(
+                "absolute right-1.5 top-1.5 size-1.5",
+                running ? "bg-brand-hi shadow-neon animate-blink" : cn("shadow-[0_0_6px_currentColor]", dot),
+              )}
+            />
+          </button>
+        </Hint>
+        <Hint label="Refresh listings" detail={REFRESH_LISTINGS_DETAIL} side="right">
+          <button
+            type="button"
+            aria-disabled={running || undefined}
+            aria-label="Refresh listings"
+            onClick={() => {
+              if (!running) onRefresh();
+            }}
+            className={cn(
+              "mx-auto flex size-9 items-center justify-center rounded-lg border border-line bg-surface-1 text-fg-2 hover:text-fg",
+              running && "opacity-50",
+            )}
+          >
+            <RefreshCw className="size-4" />
+          </button>
+        </Hint>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface-1 p-3 shadow-hairline">
+    <div className="chamfer relative rounded-xl border border-line bg-surface-1 p-3 shadow-hairline">
       <div className="flex items-center gap-2">
-        <span className={cn("size-2 rounded-full animate-pulse-dot", dot)} />
+        {running ? (
+          <span className="rec" />
+        ) : (
+          <span className={cn("h-2 w-3 shadow-[0_0_6px_currentColor]", dot)} />
+        )}
         <span className="text-sm font-medium text-fg">{running ? "Scouting" : STATUS_LABEL[status]}</span>
-        <span className="ml-auto text-xs tnum text-fg-3">{running ? `${pct}%` : lastRunLabel}</span>
+        <span className="ml-auto font-mono text-2xs tnum text-fg-3">{running ? `${pct}%` : lastRunLabel}</span>
       </div>
 
       {running ? (
-        <div className="mt-2.5">
-          <div className="h-1 overflow-hidden rounded-full bg-surface-4">
-            <div
-              className="h-full rounded-full bg-linear-to-r from-brand-lo to-brand-hi transition-[width] duration-300 ease-out-quint"
-              style={{ width: `${pct}%` }}
-            />
+        <div className="mt-2.5 flex items-center gap-3">
+          <RadarSweep />
+          <div className="min-w-0 flex-1">
+            <div className="h-1 overflow-hidden bg-surface-4">
+              <div
+                className="h-full bg-linear-to-r from-brand-lo to-brand-hi transition-[width] duration-300 ease-out-quint"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="mt-1.5 font-mono text-2xs tnum text-fg-3">
+              {progress.unit ?? 'Board'} {formatCount(progress.done)} of {formatCount(progress.total)}
+              <span className="text-fg-2"> · {progress.found} new</span>
+            </p>
           </div>
-          <p className="mt-1.5 text-xs tnum text-fg-3">
-            {progress.unit ?? 'Board'} {formatCount(progress.done)} of {formatCount(progress.total)}
-            <span className="text-fg-2"> · {progress.found} new</span>
-          </p>
         </div>
       ) : (
-        <p className="mt-1 text-xs tnum text-fg-3">
+        <p className="mt-1 font-mono text-2xs tracking-tight tnum text-fg-3">
           {formatCount(boards)} boards · {newLastRun} new last run
         </p>
       )}
@@ -290,14 +330,18 @@ export function ScoutCard({
         </ul>
       ) : null}
 
-      <Button size="sm" variant="secondary" className="mt-2.5 w-full" onClick={onRun} disabled={running}>
-        <Radar className={cn(running && "animate-spin [animation-duration:2.4s]")} />
-        {running ? "Running scout" : "Run scout"}
-      </Button>
-      <Button size="sm" variant="ghost" className="mt-1.5 w-full" onClick={onRefresh} disabled={running}>
-        <RefreshCw />
-        Refresh listings
-      </Button>
+      <Hint label="Run scout" detail="Checks every source for new postings, then scores new jobs with the model.">
+        <Button size="sm" variant="secondary" className="mt-2.5 w-full" onClick={onRun} disabled={running}>
+          <Radar />
+          {running ? "Running scout" : "Run scout"}
+        </Button>
+      </Hint>
+      <Hint label="Refresh listings" detail={REFRESH_LISTINGS_DETAIL}>
+        <Button size="sm" variant="ghost" className="mt-1.5 w-full" onClick={onRefresh} disabled={running}>
+          <RefreshCw />
+          Refresh listings
+        </Button>
+      </Hint>
     </div>
   );
 }

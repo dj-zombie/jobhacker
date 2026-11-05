@@ -31,7 +31,7 @@ import {
   ListingsBanner,
   PageHeader,
   PlaceFilter,
-  Segmented,
+  StatTabs,
   TunePanel,
   toast,
   toastUndo,
@@ -56,6 +56,7 @@ import {
 } from "../model";
 import type { JobSummary as Summary } from "@/components/jobhacker";
 import { navigate } from "../router";
+import deckSkull from "@/art/deck-skull.webp";
 
 const VIEW_META: Record<View, { title: string; icon: typeof Sparkles }> = {
   top: { title: "Top matches", icon: Sparkles },
@@ -315,6 +316,7 @@ export function TriageView({ view }: { view: View }) {
       onTune={() => dispatch({ type: "tune", open: true })}
       onEditLogo={() => openLogoPicker(detail.company)}
       onScore={detail.score == null ? scoreOne : undefined}
+      context={{ label: meta.title, dock: whereLabel, index: selIndex + 1, total: items.length }}
       primary={
         view === "shortlist"
           ? { label: "Prepare application", icon: <FileText />, onClick: () => prepare(detail.id), kbd: "S" }
@@ -399,13 +401,14 @@ export function TriageView({ view }: { view: View }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant={state.tuneOpen ? "secondary" : "ghost"}
+          variant={state.tuneOpen ? "secondary" : "outline"}
           size="sm"
           onClick={() => dispatch({ type: "tune", open: !state.tuneOpen })}
           className={cn(state.tuneOpen && "text-brand-hi")}
         >
           <SlidersHorizontal />
           <span className="max-sm:hidden">Tune</span>
+          <Kbd className="-mr-1 h-4 min-w-4 max-xl:hidden">T</Kbd>
         </Button>
       </TooltipTrigger>
       <TooltipContent>
@@ -438,7 +441,10 @@ export function TriageView({ view }: { view: View }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         icon={meta.icon}
+        kicker="Triage"
         title={meta.title}
+        art={deckSkull}
+        glitchKey={`${state.segment}|${state.where.join(",")}`}
         count={view === "top" ? undefined : formatCount(items.length)}
         leading={
           isMobile ? (
@@ -453,18 +459,87 @@ export function TriageView({ view }: { view: View }) {
             {densityButton}
           </>
         }
+        toolbar={
+          <>
+            <PlaceFilter
+              value={state.where}
+              onChange={(w) => dispatch({ type: "where", where: w })}
+              options={PLACE_OPTIONS.map((o) => ({ ...o, count: placeCounts[o.id] ?? 0 }))}
+            />
+            <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-2 max-md:hidden" />
+            <FilterChip
+              label="Seen"
+              value={state.posted}
+              defaultValue="any"
+              onChange={(v) => dispatch({ type: "posted", posted: v })}
+              options={[
+                { value: "any", label: "Any time" },
+                { value: "1d", label: "Last 24 hours" },
+                { value: "7d", label: "Last 7 days" },
+                { value: "30d", label: "Last 30 days" },
+              ]}
+            />
+            <span className="ml-auto flex shrink-0 items-baseline gap-1.5 max-sm:hidden">
+              <span className="font-display text-base font-semibold tnum text-fg">{formatCount(items.length)}</span>
+              <span className="hud-label text-fg-3">
+                {items.length === 1 ? "job" : "jobs"}, by {view === "unscored" ? "prescore" : "rank"}
+              </span>
+            </span>
+            <span className="ml-3 hidden shrink-0 items-center gap-1 text-2xs text-fg-4 xl:inline-flex">
+              <Kbd>J</Kbd>
+              <Kbd>K</Kbd> move
+              <span className="w-1.5" />
+              <Kbd>?</Kbd> shortcuts
+            </span>
+          </>
+        }
       >
         {view === "top" ? (
-          <Segmented<Segment>
+          <StatTabs<Segment>
             aria-label="Match band"
             value={state.segment}
             onChange={(s) => dispatch({ type: "segment", segment: s })}
-            className="max-sm:order-last max-sm:max-w-full max-sm:overflow-x-auto"
+            parts={[
+              { id: "strong", count: segCounts.strong, tone: "bg-strong" },
+              { id: "maybe", count: segCounts.maybe, tone: "bg-maybe" },
+              { id: "weak", count: segCounts.no, tone: "bg-no" },
+            ]}
             options={[
-              { value: "matches", label: "All matches", count: segCounts.strong + segCounts.maybe },
-              { value: "strong", label: "Strong", count: segCounts.strong, dot: "bg-strong" },
-              { value: "maybe", label: "Maybe", count: segCounts.maybe, dot: "bg-maybe" },
-              { value: "weak", label: "Weak", count: segCounts.no, dot: "bg-no" },
+              {
+                value: "matches",
+                label: "All matches",
+                shortLabel: "All",
+                count: segCounts.strong + segCounts.maybe,
+                covers: ["strong", "maybe"],
+                kbd: "1",
+                hint: `Strong and Maybe: a score of ${thresholds.maybe} or more.`,
+              },
+              {
+                value: "strong",
+                label: "Strong",
+                count: segCounts.strong,
+                dot: "bg-strong",
+                covers: ["strong"],
+                kbd: "2",
+                hint: `A score of ${thresholds.strong} or more.`,
+              },
+              {
+                value: "maybe",
+                label: "Maybe",
+                count: segCounts.maybe,
+                dot: "bg-maybe",
+                covers: ["maybe"],
+                kbd: "3",
+                hint: `A score from ${thresholds.maybe} to ${thresholds.strong - 1}.`,
+              },
+              {
+                value: "weak",
+                label: "Weak",
+                count: segCounts.no,
+                dot: "bg-no",
+                covers: ["weak"],
+                hint: `A score under ${thresholds.maybe}.`,
+              },
             ]}
           />
         ) : null}
@@ -475,37 +550,6 @@ export function TriageView({ view }: { view: View }) {
       ) : null}
 
       {view === "unscored" ? <UnscoredHero onScore={scoreNext} /> : null}
-
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-2 max-md:px-4">
-        <PlaceFilter
-          value={state.where}
-          onChange={(w) => dispatch({ type: "where", where: w })}
-          options={PLACE_OPTIONS.map((o) => ({ ...o, count: placeCounts[o.id] ?? 0 }))}
-        />
-        <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-2 max-md:hidden" />
-        <FilterChip
-          label="Seen"
-          value={state.posted}
-          defaultValue="any"
-          onChange={(v) => dispatch({ type: "posted", posted: v })}
-          options={[
-            { value: "any", label: "Any time" },
-            { value: "1d", label: "Last 24 hours" },
-            { value: "7d", label: "Last 7 days" },
-            { value: "30d", label: "Last 30 days" },
-          ]}
-        />
-        <span className="ml-auto shrink-0 text-xs text-fg-3 max-sm:hidden">
-          <span className="tnum text-fg-2">{formatCount(items.length)}</span> {items.length === 1 ? "job" : "jobs"}, by{" "}
-          {view === "unscored" ? "prescore" : "rank"}
-        </span>
-        <span className="ml-3 hidden shrink-0 items-center gap-1 text-2xs text-fg-4 xl:inline-flex">
-          <Kbd>J</Kbd>
-          <Kbd>K</Kbd> move
-          <span className="w-1.5" />
-          <Kbd>?</Kbd> shortcuts
-        </span>
-      </div>
 
       <div className="flex min-h-0 flex-1">
         <div
@@ -545,7 +589,12 @@ export function TriageView({ view }: { view: View }) {
                 ) : detailEl ? (
                   detailEl
                 ) : (
-                  <EmptyState icon={meta.icon} title="Select a job" body="Pick a job on the left to see why it ranked where it did." />
+                  <EmptyState
+                    still
+                    icon={meta.icon}
+                    title="Select a job"
+                    body="Pick a job on the left to see why it ranked where it did."
+                  />
                 )}
               </motion.div>
             </AnimatePresence>
@@ -602,9 +651,9 @@ function UnscoredHero({ onScore }: { onScore: () => void }) {
             Scoring starts with jobs in Portland, Phoenix or remote, then goes by prescore, so model calls go to jobs
             you could actually take. Each batch is capped at 150.
           </p>
-          <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-surface-4">
+          <div className="mt-3.5 h-1.5 overflow-hidden bg-surface-4">
             <div
-              className="h-full rounded-full bg-linear-to-r from-brand-lo to-brand-hi transition-[width] duration-700 ease-out-expo"
+              className="h-full bg-linear-to-r from-brand-lo to-brand-hi transition-[width] duration-700 ease-out-expo [clip-path:polygon(0_0,100%_0,calc(100%-6px)_100%,0_100%)]"
               style={{ width: `${Math.max(pct, 1)}%` }}
             />
           </div>

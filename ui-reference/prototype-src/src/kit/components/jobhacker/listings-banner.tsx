@@ -2,6 +2,8 @@
 
 import { RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Hint } from "./hint";
+import { REFRESH_LISTINGS_DETAIL } from "./scout-card";
 
 /**
  * Listings have not been checked in a week, or have never been checked.
@@ -27,10 +29,12 @@ export function ListingsBanner({
           "Listings haven't been checked yet."
         )}
       </p>
-      <Button size="sm" variant="secondary" onClick={onRefresh}>
-        <RefreshCw />
-        Refresh listings
-      </Button>
+      <Hint label="Refresh listings" detail={REFRESH_LISTINGS_DETAIL} side="bottom">
+        <Button size="sm" variant="secondary" onClick={onRefresh}>
+          <RefreshCw />
+          Refresh listings
+        </Button>
+      </Hint>
     </div>
   );
 }

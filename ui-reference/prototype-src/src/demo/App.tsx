@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Rows3,
   Send,
+  Settings,
   SlidersHorizontal,
   Sparkles,
 } from "lucide-react";
@@ -41,6 +42,7 @@ import { navigate, usePath } from "./router";
 import { TriageView } from "./views/TriageView";
 import { ApplicationsView } from "./views/ApplicationsView";
 import { CompanyLogosView } from "./views/CompanyLogosView";
+import { SettingsView, type SettingsSectionId } from "./views/SettingsView";
 import { LogoPickerDialog } from "./views/LogoPickerDialog";
 import { WorkspaceView } from "./views/WorkspaceView";
 
@@ -179,6 +181,12 @@ export const SHORTCUTS = [
     ],
   },
 ];
+
+const SETTINGS_SECTIONS: SettingsSectionId[] = ["profile", "answers", "self-id", "preferences"];
+function settingsSection(path: string): SettingsSectionId {
+  const id = path.split("/")[2] ?? "";
+  return SETTINGS_SECTIONS.find((s) => s === id) ?? "profile";
+}
 
 export function App() {
   const path = usePath();
@@ -320,6 +328,7 @@ export function App() {
       label: "Setup",
       items: [
         { href: "/companies", label: "Company logos", icon: Images, count: missingLogos },
+        { href: "/settings/profile", label: "Settings", icon: Settings },
         {
           label: "Start fresh",
           icon: Eraser,
@@ -393,6 +402,7 @@ export function App() {
           { id: "go-short", label: "Shortlist", icon: <Bookmark className="size-4 text-fg-3" />, onSelect: () => navigate("/shortlist") },
           { id: "go-unscored", label: "Unscored", icon: <CircleDashed className="size-4 text-fg-3" />, onSelect: () => navigate("/unscored") },
           { id: "go-apps", label: "Applications", icon: <FileText className="size-4 text-fg-3" />, onSelect: () => navigate("/applications") },
+          { id: "go-settings", label: "Settings", keywords: ["profile", "answers", "self-id", "preferences"], icon: <Settings className="size-4 text-fg-3" />, onSelect: () => navigate("/settings/profile") },
         ],
       },
       {
@@ -438,6 +448,8 @@ export function App() {
   else if (path === "/applications/follow-ups") view = <ApplicationsView filter="follow-ups" />;
   else if (path.startsWith("/applications/")) view = <WorkspaceView appId={path.split("/")[2] ?? ""} />;
   else if (path === "/companies") view = <CompanyLogosView />;
+  else if (path === "/settings" || path.startsWith("/settings/"))
+    view = <SettingsView key={path} section={settingsSection(path)} />;
   else view = <TriageView view="top" />;
 
   const activeNav =
@@ -445,7 +457,9 @@ export function App() {
       ? path
       : path.startsWith("/applications")
         ? "/applications"
-        : activeHref;
+        : path.startsWith("/settings")
+          ? "/settings/profile"
+          : activeHref;
 
   return (
     <Ctx.Provider
@@ -478,21 +492,13 @@ export function App() {
                 : "relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-card"
             }
           >
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -top-48 left-[20%] h-96 w-[720px] max-w-full rounded-full opacity-70 blur-3xl"
-              style={{
-                background:
-                  "radial-gradient(closest-side, color-mix(in oklab, var(--color-brand) 16%, transparent), transparent)",
-              }}
-            />
             <div className="relative flex min-h-0 flex-1 flex-col">{view}</div>
           </main>
         </div>
 
         <Dialog open={mobileNav} onOpenChange={setMobileNav}>
           <DialogContent
-            className="left-0 top-0 h-full w-[280px] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] max-w-none translate-x-0 rounded-none rounded-r-xl border-y-0 border-l-0 p-0 data-[state=open]:animate-drawer-in"
+            className="left-0 top-0 h-full w-[280px] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] max-w-none translate-x-0 rounded-none rounded-r-xl border-y-0 border-l-0 p-0 [--chamfer:0px] data-[state=open]:animate-drawer-in"
             overlayClassName="bg-black/60"
           >
             <DialogTitle className="sr-only">Navigation</DialogTitle>

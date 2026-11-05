@@ -20,3 +20,5 @@ next-env.d.ts
 coverage/
 .next-shoot/
 docs/testing/screenshots/
+site/dist/
+site/.wrangler/

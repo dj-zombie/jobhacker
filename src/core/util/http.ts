@@ -12,7 +12,7 @@ import { systemClock } from './clock.js';
  * whose timer would keep the process alive after the response arrived.
  */
 
-export const USER_AGENT = 'JobHacker/0.0.1 (personal job search tool)';
+export const USER_AGENT = 'JobHacker/0.0.1 (personal job search tool; +https://jobhacker.space)';
 
 export class HttpError extends Error {
   override readonly name = 'HttpError';

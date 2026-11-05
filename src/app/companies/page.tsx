@@ -12,7 +12,13 @@ export default function CompaniesPage() {
   if (!config.ok) {
     return (
       <>
-        <PageHeader icon={Images} title="Company logos" leading={<MobileNavButton />} />
+        <PageHeader
+          icon={Images}
+          kicker="Setup"
+          title="Company logos"
+          art="/art/deck-alien.webp"
+          leading={<MobileNavButton />}
+        />
         <EmptyState icon={TriangleAlert} title="The config has an error" body={config.error} />
       </>
     );

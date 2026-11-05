@@ -1,14 +1,7 @@
-/* Prototype only. In Next.js, fonts come from `geist/font/sans` and `geist/font/mono` (see kit README). */
+/* Prototype only. In Next.js, Geist comes from `geist/font/sans` (UI-KIT § Fonts). Tektur and Martian Mono are the kit's: `kit/fonts/fonts.css`. */
 @font-face {
   font-family: "Geist";
   src: url("../../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Geist Mono";
-  src: url("../../node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2") format("woff2");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;

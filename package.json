@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "tsc --noEmit && biome check . && vitest run",
+    "check": "tsc --noEmit && tsc --noEmit -p site && biome check . && vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "test": "vitest run",
@@ -19,6 +19,10 @@
     "start": "next start",
     "shoot": "tsx scripts/shoot.ts",
     "palette": "tsx scripts/palette.ts",
+    "demo:dev": "vite --config site/vite.config.ts",
+    "demo:build": "vite build --config site/vite.config.ts",
+    "demo:preview": "vite preview --config site/vite.config.ts",
+    "demo:record": "tsx scripts/record-demo-fill.ts",
     "db:generate": "NODE_OPTIONS='--import tsx' drizzle-kit generate",
     "db:migrate": "tsx src/cli/index.ts db:migrate"
   },
@@ -57,16 +61,19 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^6.1.2",
     "drizzle-kit": "^0.30.2",
     "pino-pretty": "^13.0.0",
     "postcss": "^8.4",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
+    "vite": "^8.3.5",
     "vitest": "^2.1.8"
   }
 }
