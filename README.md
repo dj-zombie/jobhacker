@@ -1,5 +1,7 @@
 # JobHacker
 
+**Live demo:** [https://jobhacker.space/](https://jobhacker.space/) — a fictional candidate and sample jobs. Nothing you do there is saved or sent.
+
 A **local-first, single-user** job-search assistant. It discovers postings from public ATS
 boards (Greenhouse, Lever, Ashby, SmartRecruiters, Breezy, Polymer) and optional search
 sources (JSearch with your own key, Hacker News "Who is hiring"), ranks them against your
@@ -8,9 +10,7 @@ Chrome** — so you review and click **Submit** yourself.
 
 ![JobHacker triage: a ranked queue beside the selected job, with the score and the reasons behind it.](docs/screenshots/triage.png)
 
-More of the interface is in [docs/screenshots](docs/screenshots/README.md). These pictures are the running app with sample data, not a live search.
-
-**Try the demo** at [jobhacker.space](https://jobhacker.space), in your browser with nothing to install: the interface on a fictional candidate and sample jobs. Its Open & fill replays a recorded run of the real form filler on a sample form. Nothing you do there is saved or sent.
+More of the interface is in [docs/screenshots](docs/screenshots/README.md). These pictures are the running app with sample data, not a live search. On the demo, Open & fill replays a recorded run of the real form filler on a sample form.
 
 It is built to be safe by design:
 
