@@ -92,13 +92,13 @@ export function DescriptionBlocks({ blocks }: { blocks: DescriptionBlock[] }) {
           );
         if (b.type === "paragraph")
           return (
-            <p key={keyFor(`p:${b.text}`)} className="mb-3 max-w-[68ch] last:mb-0">
+            <p key={keyFor(`p:${b.text}`)} className="mb-3 max-w-[80ch] last:mb-0">
               {b.text}
             </p>
           );
         const itemSeen = new Map<string, number>();
         return (
-          <ul key={keyFor(`l:${b.items.join("|")}`)} className="mb-3 max-w-[68ch] space-y-1.5 last:mb-0">
+          <ul key={keyFor(`l:${b.items.join("|")}`)} className="mb-3 max-w-[80ch] space-y-1.5 last:mb-0">
             {b.items.map((item) => {
               const n = itemSeen.get(item) ?? 0;
               itemSeen.set(item, n + 1);

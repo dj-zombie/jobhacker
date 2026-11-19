@@ -1,8 +1,15 @@
+import { createHash } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { saveRanking, saveWeights } from './criteria-file.js';
+import { fixedClock } from '../util/clock.js';
+import {
+  parseTargetCompanies,
+  saveRanking,
+  saveTargetCompanies,
+  saveWeights,
+} from './criteria-file.js';
 import { ConfigError } from './errors.js';
 import { loadConfigFile } from './load.js';
 import { type Bands, type Weights, criteriaSchema } from './schemas.js';
@@ -139,5 +146,45 @@ describe('saveRanking', () => {
     const saved = saveRanking(dir, { weights: NEW, bands: BANDS });
     expect(saved).toEqual({ weights: NEW, bands: BANDS });
     expect(readFileSync(join(dir, 'criteria.yaml'), 'utf8')).toContain('# top comment');
+  });
+});
+
+const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+
+describe('saveTargetCompanies', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'jobhacker-targets-'));
+    cpSync(join('config', 'criteria.example.yaml'), join(dir, 'criteria.yaml'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('keeps a comment and the places block, and a second save leaves the bytes alone', () => {
+    const deps = { clock: fixedClock('2026-11-09T12:00:00.000Z'), backupDir: join(dir, 'backups') };
+    const names = parseTargetCompanies('Nike\nNike, Inc.\n\nRiot');
+    expect(names).toEqual(['Nike', 'Riot']);
+    const saved = saveTargetCompanies(dir, names, deps);
+    expect(saved.changed).toBe(true);
+    const text = readFileSync(join(dir, 'criteria.yaml'), 'utf8');
+    expect(text).toContain('# exact company names to never show');
+    expect(text).toContain('places:');
+    expect(loadConfigFile('criteria', criteriaSchema, dir).target_companies).toEqual([
+      'Nike',
+      'Riot',
+    ]);
+    const digest = sha256(text);
+    const again = saveTargetCompanies(dir, ['Nike', 'Riot'], deps);
+    expect(again.changed).toBe(false);
+    expect(sha256(readFileSync(join(dir, 'criteria.yaml'), 'utf8'))).toBe(digest);
+  });
+
+  it('refuses a name that normalizes to nothing and writes nothing', () => {
+    const before = readFileSync(join(dir, 'criteria.yaml'), 'utf8');
+    expect(() => parseTargetCompanies('Inc.')).toThrow(ConfigError);
+    expect(readFileSync(join(dir, 'criteria.yaml'), 'utf8')).toBe(before);
   });
 });

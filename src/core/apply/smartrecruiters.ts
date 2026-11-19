@@ -1,5 +1,5 @@
 import type { Profile } from '../config/schemas.js';
-import { genericAdapter } from './adapters/generic.js';
+import { smartRecruitersAdapter } from './adapters/smartrecruiters.js';
 import { type FillDeps, fillForm } from './fill.js';
 import type { SafePage } from './safe-page.js';
 import type { FillReport, FilledField, RawFormField, UnfilledField } from './types.js';
@@ -378,7 +378,7 @@ export async function fillSmartRecruitersForm(
   deps: FillDeps,
   url: string,
 ): Promise<FillReport> {
-  const first = await fillForm(page, genericAdapter, deps, url);
+  const first = await fillForm(page, smartRecruitersAdapter, deps, url);
   const sections = await fillExperienceAndEducation(page, deps.profile);
 
   const filled = [...first.filled, ...sections.filled];
@@ -410,7 +410,7 @@ export async function fillSmartRecruitersForm(
   }
 
   if (advanced) {
-    const second = await fillForm(page, genericAdapter, deps, url);
+    const second = await fillForm(page, smartRecruitersAdapter, deps, url);
     filled.push(...second.filled);
     unfilled.push(...second.unfilled);
     for (const label of second.skipped_eeo) {

@@ -1,0 +1,126 @@
+{
+  "status": "OK",
+  "data": [
+    {
+      "job_id": "U0t0UEpsQ3RxbUVXSmg5QkFBQUFBQT09OkVzd0JDb3dCUVVSRVlsZGxXVWd3ZFZWaU1GWjJVWGRyVURWQlRrcHlhVWR6TW5OT1IwaFZZVVJ4Vm0xM1NGUkdRMkU1VkZkaFIwVkdlSGxNT0V4cFJWWk1Va1ZwTVZOMFJHSldVVnBOVkRsYVRGWXRjelpQZEdWaUxXWmlTMlUxUmxCcVRUVTFSM2xCWkdORlJ6WXpMVmwwTjNrdFREaGFjMHQ0YzNkbWRrMDNXRlUzTkc5TVpEbGFNSHBuUnpWZmNqUVNGemx5UkRCaGRXcHNSalIxV21oMlkxQnJXbDlGYVVGekdpSkJTRTR3UlRkSFFXMHpSV3BLWkVjdE5HZFVMWEoyUXpkalgzVlRjR0ppYVRCUjoxMDRiMThkZg",
+      "job_uid": "SKtPJlCtqmEWJh9BAAAAAA==",
+      "job_title": "Senior Frontend Engineer",
+      "employer_name": "Credible",
+      "employer_logo": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT48O_2QfdmAAxwfY8fa24GtgMq1VmBasbmv7KV&s=0",
+      "employer_website": "https://www.credible.com",
+      "job_publisher": "Indeed",
+      "job_employment_type": "Full-time",
+      "job_employment_types": ["FULLTIME"],
+      "job_apply_link": "https://www.indeed.com/viewjob?jk=2c2250e37f8d5236&utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic",
+      "job_apply_is_direct": false,
+      "apply_options": [
+        {
+          "apply_link": "https://www.indeed.com/viewjob?jk=2c2250e37f8d5236&utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic",
+          "is_direct": false,
+          "publisher": "Indeed"
+        },
+        {
+          "apply_link": "https://www.ziprecruiter.com/c/credible/Job/Senior-Frontend-Engineer/-in-Durham,NC?jid=12269ae2fa0b7d84&utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic",
+          "is_direct": false,
+          "publisher": "ZipRecruiter"
+        },
+        {
+          "apply_link": "https://www.simplyhired.com/job/CPrdDNDG9JQTQLIctymhy5mN9iXqCXS-5ZFq-25YKmzsYbzGrE7IMA?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic",
+          "is_direct": false,
+          "publisher": "SimplyHired"
+        },
+        {
+          "apply_link": "https://jobs.digitalhire.com/job-listing/opening/5mNepzShLHsTykIyVIYY0b?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic",
+          "is_direct": false,
+          "publisher": "Digitalhire"
+        },
+        {
+          "apply_link": "https://us.jobrapido.com/jobpreview/7796437426632654848?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic",
+          "is_direct": false,
+          "publisher": "Jobrapido"
+        },
+        {
+          "apply_link": "https://us.trabajo.org/job-2283-58400b5cda42a69eff7efc151a82dd37?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic",
+          "is_direct": false,
+          "publisher": "Trabajo.org"
+        }
+      ],
+      "job_description": "Who is Credible?\n\nCredible is a leading U.S. consumer finance marketplace, transforming the way consumers access and compare financial products. We operate at a consumer and enterprise level. On the consumer side, we help millions of people make smarter financial decisions by comparing personalized, pre-qualified offers across student loans, personal loans, mortgages, credit cards, and insurance — all without impacting their credit score. On the enterprise side, we power financial product comparison and distribution through deep integrations and partnerships with lenders, insurance carriers, and financial institutions, as well as providing marketplace technology and capabilities to third-party partners and distribution channels.\n\nAbout the Role\n\nWe are looking for a talented and passionate Senior Frontend Engineer to join our software engineering team. You'll build the user-facing side of an extraordinary web-based platform that has already helped thousands of people save money and aims to help millions more, while also contributing to the APIs and services that power it. If you've been seeking a product that's worthy of your skills, then read on!\n\nResponsibilities\n• Own the design and delivery of customer-facing web features in React and TypeScript, with a passion for quality in user experience, web design principles, and code quality\n• Contribute to backend work that supports the frontend, such as building and extending REST and/or GraphQL APIs, backend-for-frontend layers, and Node.js services\n• Understand customer requirements and efficiently translate them into code\n• Be a self-starter who works in an Agile/Lean environment with minimal supervision\n• Thrive on collaboration; Credible's Software team works closely with Product Management, Design and Operations for everything from roll-out to feature enhancement\n• Show strong leadership and verbal communication skills, including mentoring other engineers\n• Take pride in writing and maintaining clean, modular, well-tested code\n• Be resourceful and mindful; you move fast and show empathy for your colleagues\n• Stay open to learning new technologies\n\nEducation and Experience\n• 8+ years of solid web and front-end development\n• 8+ years of experience programming JavaScript and TypeScript, including concepts like asynchronous programming, closures, promises, and types\n• Solid experience with React\n• Mastery of ES6, HTML5, and CSS3\n• Working experience with Node.js, Express.js, Next.js, Webpack, Babel, or similar tools\n• Experience building and consuming REST and/or GraphQL APIs, including contributing to server-side code that backs them\n• Working knowledge of relational databases and SQL\n• Demonstrable experience building testable software with tests\n• BS in Engineering, Computer Science, or equivalent experience\n\nNice to Have\n• Solid experience with SEO\n• Experience with AWS services such as EC2, RDS, S3 and SQS\n• Knowledge or experience with Docker\n• Experience with Ruby on Rails or a similar MVC framework (e.g., Django), with RSpec or similar test frameworks\n\nWhy work at Credible?\n\nWe combine the intelligence, expertise, and confidence of a financial advisor with the approachability and honesty of a friend. In other words, we're the friend you always wish you had in finance.\n\nWe are optimistic, challengers, trustworthy, clever, and smart. We are open and transparent. We strive to act as advisors by being friendly, objective, and open in our communication. We use language that is intelligent yet approachable. When appropriate, we'll drop in a bit of wit to position ourselves as a fresh, reliable voice in the financial world.\n\nWe are an equal opportunity employer and all qualified applicants will receive consideration for employment without regard to race, color, religion, sex, national origin, gender identity, disability, protected veteran status, or any other characteristic protected by law. We will consider for employment qualified applicants with criminal histories consistent with applicable law.",
+      "job_is_remote": false,
+      "job_posted_at": "2 days ago",
+      "job_posted_at_timestamp": 1794182400,
+      "job_posted_at_datetime_utc": "2026-11-09T00:00:00.000Z",
+      "job_location": "Durham, NC",
+      "job_city": "Durham",
+      "job_state": "North Carolina",
+      "job_country": "US",
+      "job_latitude": 35.995568399999996,
+      "job_longitude": -78.9002077,
+      "job_benefits": null,
+      "job_benefits_strings": null,
+      "job_google_link": "https://www.google.com/search?q=jobs&gl=us&hl=en&udm=8#vhid=vt%3D20/docid%3DSKtPJlCtqmEWJh9BAAAAAA%3D%3D&vssid=jobs-detail-viewer",
+      "job_salary": null,
+      "job_salary_string": "114K–150K a year",
+      "job_min_salary": 114000,
+      "job_max_salary": 150000,
+      "job_salary_period": "YEAR",
+      "job_highlights": {},
+      "job_onet_soc": null,
+      "job_onet_job_zone": null,
+      "employer_reviews": null,
+      "work_arrangement": "onsite",
+      "seniority_level": "senior",
+      "required_experience_years": 8,
+      "education_required": {
+        "level": "bachelor",
+        "field": "Engineering or Computer Science"
+      },
+      "visa_sponsorship": null,
+      "relocation_required": null,
+      "relocation_assistance": null,
+      "contract_duration": null,
+      "start_date": null,
+      "required_technologies": [
+        "JavaScript",
+        "TypeScript",
+        "React",
+        "ES6",
+        "HTML5",
+        "CSS3",
+        "Node.js",
+        "Express.js",
+        "Next.js",
+        "Webpack",
+        "Babel",
+        "REST",
+        "GraphQL",
+        "SQL"
+      ],
+      "preferred_technologies": [
+        "AWS",
+        "EC2",
+        "RDS",
+        "S3",
+        "SQS",
+        "Docker",
+        "Ruby on Rails",
+        "Django",
+        "RSpec"
+      ],
+      "methodologies": ["Agile", "Lean"],
+      "industry": "FinTech",
+      "job_function": "frontend",
+      "has_management_responsibilities": false,
+      "ai_ml_involved": false,
+      "benefits_extended": [],
+      "soft_skills": [
+        "communication",
+        "collaboration",
+        "leadership",
+        "mentoring",
+        "resourcefulness",
+        "empathy"
+      ]
+    }
+  ]
+}

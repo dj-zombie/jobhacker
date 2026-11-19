@@ -371,8 +371,38 @@ describe('runScout', () => {
     expect(result.stats.prescored).toBe(3);
     expect(result.stats.scoring).not.toBe('skipped');
     if (result.stats.scoring !== 'skipped') expect(result.stats.scoring.scored).toBe(3);
+  });
+
+  it('a limit passed to a scout can lower the cap and cannot raise it', async () => {
+    const db = freshDb();
+    const clock = fixedClock('2026-10-22T12:00:00.000Z');
+    const http: Http = {
+      async postJson() {
+        throw new Error('postJson is not used by this fake');
+      },
+      async getJson() {
+        return readFixture('lever-spotify.json');
+      },
+    };
+    const llm = new FakeLlm({ responder: () => scoreOutput() });
+    const result = await runScout({
+      db,
+      http,
+      clock,
+      log: nullLogger(),
+      companies: [company({ name: 'Spotify', ats: 'lever', token: 'spotify' })],
+      criteria: testCriteria({ cap: 1 }),
+      preferences: TEST_PREFERENCES,
+      scoring: { llm, profile: testProfile(), limit: 10 },
+    });
+    expect(llm.callCount).toBe(1);
+    if (result.stats.scoring !== 'skipped') {
+      expect(result.stats.scoring.scored).toBe(1);
+      expect(result.stats.scoring.skipped_cap).toBe(2);
+    }
     const rows = db.select().from(jobs).all();
-    expect(rows.every((job) => job.prescore !== null && job.status === 'scored')).toBe(true);
+    expect(rows.filter((job) => job.status === 'scored')).toHaveLength(1);
+    expect(rows.filter((job) => job.scoreState === 'run_cap')).toHaveLength(2);
   });
 
   it('closes every open job when a board responds with an empty list', async () => {

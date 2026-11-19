@@ -1,3 +1,4 @@
+import { urlIsOn } from '../../util/host.js';
 import type { SafePage } from '../safe-page.js';
 import type { FormAdapter, RawFormField } from '../types.js';
 
@@ -17,7 +18,7 @@ export const greenhouseAdapter: FormAdapter = {
   ats: 'greenhouse',
 
   canHandle(url: string): boolean {
-    return /greenhouse\.io|grnh\.se/i.test(url);
+    return urlIsOn(url, ['greenhouse.io', 'grnh.se']);
   },
 
   async detectFields(page: SafePage): Promise<RawFormField[]> {

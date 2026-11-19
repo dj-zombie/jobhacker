@@ -3,7 +3,7 @@
  *
  *   pnpm exec tsx tests/e2e/motion.run.ts http://127.0.0.1:3000
  *
- * On `/` at 1440×900 it checks that the title decodes once and the h1's accessible text is the
+ * On `/matches` (Top matches, which left `/` in J23) at 1440×900 it checks that the title decodes once and the h1's accessible text is the
  * real title throughout, that a row under a resting pointer drops its hover tick and wash after 12
  * J presses and gets them back when the pointer moves, that the list's target lock lets go during
  * those presses and is back 600 ms after them, that reduced motion shows no decode or beam and
@@ -110,7 +110,7 @@ async function open(browser: Browser, reducedMotion: 'reduce' | 'no-preference')
     }
   });
   page.on('pageerror', (err) => errors.push(String(err)));
-  await page.goto(`${base}/`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+  await page.goto(`${base}/matches`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
   await page.locator('[role="option"]').first().waitFor({ timeout: 60_000 });
   return { ctx, page, errors };
 }

@@ -38,6 +38,8 @@ export interface JobSummary {
   closed?: boolean;
   /** One of the user's named places (Portland, Phoenix…) when the job is in it. Remote is `remote`. */
   place?: { id: string; label: string } | null;
+  /** On the company list. Unscored rows with this set sort first. */
+  target?: boolean;
 }
 
 export interface DimensionRow {
@@ -91,6 +93,11 @@ export interface JobDetailData extends JobSummary {
   rubric?: string;
   scoredLabel?: string;
   postingUrl?: string;
+  /**
+   * The company's site, already an https link on its host. Absent shows no link.
+   * The kit does not decide what is a safe hostname.
+   */
+  website?: { host: string; href: string } | null;
 }
 
 export type FieldState = "filled" | "review" | "blank";

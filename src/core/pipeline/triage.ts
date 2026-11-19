@@ -1,11 +1,13 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Bands, Weights } from '../config/schemas.js';
 import type { Db } from '../db/client.js';
 import type { ApplicationStatus } from '../db/repo/applications.js';
 import { type ListFilters, type ListedJob, type ScoredRow, scoresRepo } from '../db/repo/scores.js';
-import type { Dimensions, Job } from '../db/schema.js';
+import { type Dimensions, type IndustryStatus, type Job, companyIndustry } from '../db/schema.js';
 import type { Clock } from '../util/clock.js';
+import { companyOnList } from '../util/company-match.js';
 import { type Funnel, gateLines } from './funnel.js';
+import { inIndustry } from './industry-match.js';
 import { rankJobs } from './rank.js';
 import { isStale } from './ranked.js';
 import type { ScoringKey } from './score.js';
@@ -63,6 +65,10 @@ function listedOf(row: ListedJob): ListedJob {
     scoreState: row.scoreState,
     areas: row.areas,
     closed: row.closed,
+    companyId: row.companyId,
+    industryId: row.industryId,
+    industryStatus: row.industryStatus,
+    industryReason: row.industryReason,
   };
 }
 
@@ -131,26 +137,43 @@ export interface TriageCounts {
 export function triageCounts(
   db: Db,
   clock: Clock,
-  options: { key: ScoringKey; where: readonly string[]; weights: Weights; bands: Bands },
+  options: {
+    key: ScoringKey;
+    where: readonly string[];
+    weights: Weights;
+    bands: Bands;
+    /** Suggested or confirmed companies in this industry. Absent: every company. */
+    industry?: string | null;
+    /** Listed companies. Absent: no rank bump. */
+    targetCompanies?: readonly string[];
+  },
 ): TriageCounts {
+  const industry = options.industry ?? null;
+  const visible = (row: TriageRow) =>
+    inWhere(row.areas, options.where) && inIndustry(row, industry);
   const all = loadRows(
     db,
     clock,
     options.key,
     { statuses: [...UNTRIAGED, 'shortlisted'] },
     true,
-  ).filter((row) => inWhere(row.areas, options.where));
+  ).filter(visible);
   const closedShort = loadRows(
     db,
     clock,
     options.key,
     { statuses: ['shortlisted'], includeClosedShortlist: true },
     true,
-  ).filter((row) => row.closed && inWhere(row.areas, options.where));
+  ).filter((row) => row.closed && visible(row));
   const since = newCutoff(clock);
   const rows = (view: TriageView) => all.filter((row) => inView(view, row, since));
+  const list = options.targetCompanies ?? [];
   const ranked = rankJobs(
-    rows('top').map((row) => ({ jobId: row.jobId, dimensions: toDimensions(row.dims ?? []) })),
+    rows('top').map((row) => ({
+      jobId: row.jobId,
+      dimensions: toDimensions(row.dims ?? []),
+      target: companyOnList(row.company, list) !== null,
+    })),
     options.weights,
     options.bands,
   );
@@ -176,6 +199,9 @@ export interface TriageDetail {
   job: Job;
   company: string;
   areas: string[];
+  industryId: string | null;
+  industryStatus: IndustryStatus | null;
+  industryReason: string | null;
   score: DetailScore | null;
   /** Scored under an older key only: shown as unscored until a score run reaches it. */
   stale: boolean;
@@ -194,6 +220,15 @@ export function triageDetail(
   const areas = db
     .all<{ area: string }>(sql`select area from job_areas where job_id = ${jobId}`)
     .map((r) => r.area);
+  const industry = db
+    .select({
+      industryId: companyIndustry.industryId,
+      status: companyIndustry.status,
+      reason: companyIndustry.reason,
+    })
+    .from(companyIndustry)
+    .where(eq(companyIndustry.companyId, detail.job.companyId))
+    .get();
   const app = db.get<{ id: number; status: ApplicationStatus }>(
     sql`select id, status from applications where job_id = ${jobId}`,
   );
@@ -215,6 +250,9 @@ export function triageDetail(
     job: detail.job,
     company: detail.company,
     areas,
+    industryId: industry?.industryId ?? null,
+    industryStatus: industry?.status ?? null,
+    industryReason: industry?.reason ?? null,
     score,
     stale,
     application: app ? { id: app.id, status: app.status } : null,
@@ -250,6 +288,10 @@ export function triageRowOf(d: TriageDetail): TriageRow {
     prescore: job.prescore,
     scoreState: job.scoreState,
     areas: d.areas,
+    companyId: job.companyId,
+    industryId: d.industryId,
+    industryStatus: d.industryStatus,
+    industryReason: d.industryReason,
     dims: d.score ? dimScores(d.score.dimensions) : null,
     stale: d.stale,
     closed: job.closedAt !== null,

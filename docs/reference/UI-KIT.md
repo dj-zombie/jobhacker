@@ -28,6 +28,7 @@ Verified by running it in the prototype project:
 - The production build works with Tailwind 4.3 and Vite 8.
 - There are no console errors in any view at 1440, 1024 or 390 wide.
 - The list is virtualized at 11,000 rows. About 30 rows are in the DOM, and a two-second scroll held 16.7ms per frame at the 95th percentile in headless Chromium.
+  - 2026-11-09 (D171): comfortable rows wrap, so the list measures each one as it renders. With 6,622 rows in Top matches, 32 or 33 rows were in the DOM, and a scroll held 16.7 to 16.8ms per frame at the 95th percentile, the same as the fixed-height list it replaced.
 
 **Not verified:** running inside the Next.js app. J4's first job is to prove that. The kit imports `next/link` and uses `"use client"` where it's needed, but nothing has run against the real layout yet.
 
@@ -344,6 +345,10 @@ Without a client ID, every tile falls back to its monogram.
 - **Don't add a UI library** beyond what the kit uses.
 - **When the app needs something the reference doesn't show** (an existing feature the prototype left out, like application status changes), build it from kit primitives, following the reference's patterns. List it in STATUS so Kris can look at it. Don't drop the feature, and don't invent a new look for it.
 - **When something in the reference won't work with the real data,** stop and say what and why in STATUS, rather than improvising.
+- **Triage rows wrap, they don't cut** (D171). From 768px the list and the detail sit side by side, and the list is always visible: 44% of the main area, from 340px to 440px. A comfortable row shows the whole title, company, location and pay, wrapping instead of truncating. The meta line is inline text, not flex items, so a long location wraps word by word. `JobList` measures each row as it renders (`measureElement`), and its highlight and lock follow the measured box. Hover never changes a row's size: the quick actions take the age's place in the right column. Compact density stays one truncated line per row, for scanning.
+- **Pay stands out** (D171). It's the header's first fact, set large with a banknote icon, or "Not listed". In the list it's a marked figure at the end of the meta line, and compact rows show it too once the list is 384px wide.
+- **The description leads the detail** (D171). The detail has no max width. From an 896px pane (`@4xl`) it's a 12-column grid, like the dashboard's: the description and Why it's here take 8 columns, and the verdict and red flags take 4, sticky beside them as the description scrolls (`top-17` clears the compact bar). Narrower, one column reads verdict, red flags, description, breakdown. The description is never collapsed, and each dimension's reason shows in full. The verdict and the breakdown lay out by their own width (container queries), since the same component sits in a 317px side column or a full pane.
+- **A job never opens on a bare pane** (D172). The container loads the jobs around the selected one, so J and K usually find the next job ready. When a job's details aren't in yet, `JobDetail` takes `loading`, and placeholder bars hold the places of the description, Why it's here, Posted, Last confirmed and the employment type, so nothing moves when they arrive. Red flags, which a job may not have, get no placeholder. The prototype shows the state with `?frame=loading` (frames `53-detail-loading-*`).
 
 ## Motion
 
@@ -352,21 +357,23 @@ The look is a HUD (D149, recolored and retimed after immunefi.com by D150): one 
 - **What may animate.** Keyframes, and any transition on a list row, change only `transform` and `opacity`. `clip-path` is allowed on small one-shot elements: a title, a label, a tooltip, a toast, a leaving row. A hover transition on a single control, such as a button, a chip or a sidebar link, may also change color, border and box-shadow.
 - **Loops are few.** An animation repeats forever only while it shows something live, or as the job header's one ambient beam:
   - the caret in the brand mark
-  - the REC dot and the scan beam in the job header. The beam pauses while the header is off screen and during a burst
+  - the REC dot and the scan beam in the job header. The beam pauses while the header is off screen, during a burst, and for the 520 ms of each acquire
   - the radar and the blinking square while a scout runs
   - the radar in an empty state that is on screen
+  - the job detail's placeholder bars, while that job's details are on their way (D172)
 
   At most three run on a screen at rest, and a running scout adds its own indicator for as long as it runs. One indicator can be several elements: a radar's sweep, blips and pings count as one, and so do the beam's window and its counter-moving canvas. A radar beside other live loops gets `still`.
 - **One lock per surface.** A target lock (`TargetLock`) is one element with four corner children, whatever the number of targets. `lockTo` moves it by transform: a spring glide by default, a fly-in from another box (`from`), a snap from outside (`spread`), or a jump (`instant`). Only `from`, `spread` and `instant` force a layout. Never give each row or item its own brackets.
 - **Rows get no new DOM.** The virtualized list's effects are pseudo-elements and transitions on elements it already renders: the tick and the wash on the row. The selection's highlight and lock are siblings of the rows, one each.
 - **Selection changes don't animate rows.** A row's transitions sit under `row-hover:`, so J and K move the selected tick at once, and the eased slide plays only for a moving pointer. A transition that starts on every J press puts a compositor layer on each row it touches. With the bar's transition always on, 200 J presses were about 290 ms slower (J17).
-- **A burst holds the show** (`useAcquire`). A change that comes less than 300 ms after the previous one is part of a burst: holding J, or pressing it fast. During a burst the header skips its acquire sequence and pauses the beam, and the list's lock lets go of the row. One acquire plays 300 ms after the last change, and the list's lock snaps onto the row. A single move still plays everything. When the list's lock restarted its springs on every press, style recalculation during 200 J presses was about 20% higher (D150).
+- **A burst holds the show** (`useAcquire`). A change that comes less than 300 ms after the previous one is part of a burst: holding J, or pressing it fast. During a burst the header skips its acquire sequence and pauses the beam, and the list's lock lets go of the row. One acquire plays 300 ms after the last change, and the list's lock snaps onto the row. A single move still plays everything. When the list's lock restarted its springs on every press, style recalculation during 200 J presses was about 20% higher (D150). The beam also pauses while each acquire plays. In a 1,118px detail pane, a running beam made 60 job changes drop 290 frames, against 36 with it paused (D170, kept by D171).
 - **A glitch that can't finish is skipped.** The detail title glitches only as part of an acquire, so holding J doesn't restart it on every press. `glitch-text` draws its two colored copies only while `glitch-run` is on, so text at rest costs no extra boxes.
 - **Row hover follows a moving pointer.** Row hover styles use the `row-hover:` and `group-row-hover:` variants, never `hover:`. The listbox sets `data-pointer` on pointer move and clears it on scroll. That way J, K and the wheel don't light up rows under a resting pointer. Plain `:hover` made 200 J presses about 250 ms slower (D149).
 - **No expensive paint on big surfaces.** No `mix-blend-mode`, `backdrop-filter` or animated `filter` on a large or scrolling surface. Texture (scanlines, grain, the grid) never animates, except the header scanlines' one jolt per acquire and the deck art's one tear per change. The header art's duotone is a static SVG filter: the wipe moves the filtered layer, and never changes the filter. The glyph field draws its two canvases once per size, never per frame.
 - **Text effects in JS.** A decode or glitch effect runs one `requestAnimationFrame` loop per element, cancels on the next change, and never delays a key handler. The real text stays in the DOM for screen readers, and the scramble is an `aria-hidden` overlay.
 - **Chamfers and focus.** `chamfer` clips one corner with `clip-path`, which also clips a focus ring drawn outside. A focusable chamfered element draws its ring inset (`focus-visible:-outline-offset-2`). A full-bleed sheet or drawer sets `[--chamfer:0px]`.
-- **Reduced motion.** The reduced-motion block in `globals.css` stays: every animation and transition runs for 1 ms, once. JS effects check `useReducedMotion` and show the final text at once. Locks, ticks and bars still appear, without motion, and the header lock jumps straight to the cover. The beam is hidden. No state is shown by animation alone.
+- **Reduced motion.** The reduced-motion block in `globals.css` stays: every animation and transition runs for 1 ms, once. JS effects check `useReducedMotion` and show the final text at once. Locks, ticks and bars still appear, without motion, and the header lock jumps straight to the cover. The beam is hidden. No state is shown by animation alone. The same preference silences the app's sound cues (D167) without changing the stored mute.
+
 - **The pieces,** all in `globals.css` or the kit:
 
   | Piece | What it is |
@@ -385,6 +392,7 @@ The look is a HUD (D149, recolored and retimed after immunefi.com by D150): one 
   | `rec`, `hazard`, `hazard-warn`, `viewfinder` | The REC dot, the red and orange hazard stripes, and the header's viewfinder corners |
   | `glitch-text`, `glitch-run` | An RGB-split glitch on text with `data-text`. `glitch-run` plays it once, and `--glitch-ms` sets its length |
   | `row-wash` | The violet hover gradient on rows |
+  | `skeleton`, `animate-skeleton` | A loading placeholder's flat bar, and the opacity pulse on a group of bars (D172). `JobDetail`'s `loading` uses them |
   | `DecodeText`, `useDecodeText` | A title that decodes once from scrambled characters |
   | `RadarSweep` | The radar. It animates only while on screen and not `still` |
 
@@ -442,4 +450,4 @@ CHROMIUM_PATH=... node scripts/shoot.mjs ../screens   # frames of every view; CH
 node scripts/stress.mjs               # the 11k-row virtualization check
 ```
 
-Opening `dist/index.html?stress` loads about 11,000 rows.
+Opening `dist/index.html?stress&at=/matches` opens Top matches with the stress set loaded: 6,622 rows there, the 22 demo jobs and 300 copies of each. `/` is the dashboard (D168).

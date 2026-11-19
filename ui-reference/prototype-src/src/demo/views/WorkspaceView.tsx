@@ -16,9 +16,12 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   CompanyHeader,
+  EmployerLinkBar,
+  EmployerLinkField,
   EmptyState,
   FillReadiness,
   FillReport,
+  NoFormNotice,
   RemoteChip,
   ScorePill,
   Timeline,
@@ -31,10 +34,22 @@ import { openLogoPicker } from "../logo-store";
 import { demoCoverUrl, demoLogoUrl, demoSymbolUrl, demoWordmarkUrl } from "../logos";
 import { bandFor, rank } from "../model";
 import { navigate } from "../router";
-import { COVER_NOTE, STANDARD_ANSWERS, TIMELINE_LINEAR } from "../data";
+import { COVER_NOTE, DEMO_JOB_BOARDS, NOTICE_FRAMES, STANDARD_ANSWERS, TIMELINE_LINEAR } from "../data";
 import { StatusChip } from "./ApplicationsView";
 
 type Tab = "apply" | "resume" | "cover" | "answers" | "activity";
+
+const JOB_BOARD_REFUSAL = "That's a job board too. Paste the employer's own application link.";
+
+function linkHost(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    return u.hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
 
 function countWords(s: string) {
   return s.split(/\s+/).filter(Boolean).length;
@@ -42,8 +57,14 @@ function countWords(s: string) {
 
 export function WorkspaceView({ appId }: { appId: string }) {
   const { state, dispatch } = useDemo();
-  const app = state.apps.find((a) => a.id === appId);
+  const frame = NOTICE_FRAMES.find((f) => f.app.id === appId);
+  const app = state.apps.find((a) => a.id === appId) ?? frame?.app;
   const [tab, setTab] = React.useState<Tab>("apply");
+  // Frames 54 and 55: the employer link Kris sets, and the field's draft and refusal.
+  const [employerLink, setEmployerLink] = React.useState<string | null>(null);
+  const [linkDraft, setLinkDraft] = React.useState("");
+  const [linkError, setLinkError] = React.useState<string | null>(null);
+  const [editingLink, setEditingLink] = React.useState(false);
   const [filling, setFilling] = React.useState(false);
   const isLinear = appId === "linear";
   const [cover, setCover] = React.useState(isLinear ? COVER_NOTE : "");
@@ -65,8 +86,21 @@ export function WorkspaceView({ appId }: { appId: string }) {
     );
   }
 
-  const job = state.jobs.find((j) => j.id === app.jobId)!;
-  const fields = state.fields[app.id] ?? [];
+  const job = (state.jobs.find((j) => j.id === app.jobId) ?? frame?.job)!;
+  const fields = frame ? [] : (state.fields[app.id] ?? []);
+  const notice = frame && employerLink === null ? frame : null;
+  const employerHost = employerLink ? linkHost(employerLink) : null;
+
+  const saveLink = (value: string) => {
+    const url = value.trim();
+    const host = linkHost(url);
+    if (!host) return setLinkError("Paste a link that starts with https:// or http://.");
+    if (DEMO_JOB_BOARDS.some((d) => host === d || host.endsWith(`.${d}`))) return setLinkError(JOB_BOARD_REFUSAL);
+    setLinkError(null);
+    setEmployerLink(url);
+    setEditingLink(false);
+    toast("Saved the employer link", { description: `Open & fill opens ${host}.`, icon: <Check className="text-strong" /> });
+  };
   const filled = fields.filter((f) => f.state === "filled").length;
   const review = fields.filter((f) => f.state === "review").length;
   const blank = fields.filter((f) => f.state === "blank").length;
@@ -88,6 +122,14 @@ export function WorkspaceView({ appId }: { appId: string }) {
       ];
 
   const openAndFill = () => {
+    if (notice?.kind === "job-board") {
+      toast(`Nothing to fill on ${notice.host}`, { description: "It's a job board, so Chrome wasn't opened." });
+      return;
+    }
+    if (frame) {
+      toast(`Opened ${employerHost ?? frame.host} in Chrome`, { description: "The prototype has no form here to fill." });
+      return;
+    }
     setFilling(true);
     const hosted = demoHooks.openAndFill;
     if (hosted) {
@@ -164,12 +206,16 @@ export function WorkspaceView({ appId }: { appId: string }) {
           ]}
         >
         <div className="mx-auto max-w-4xl px-6 py-6 max-md:px-4">
-          <FillReadiness
-            filled={filled}
-            review={review}
-            blank={blank}
-            resumeAttached={fields.some((f) => f.id === "resume" && f.state === "filled")}
-          />
+          {notice ? null : frame ? (
+            <NotFilledYet />
+          ) : (
+            <FillReadiness
+              filled={filled}
+              review={review}
+              blank={blank}
+              resumeAttached={fields.some((f) => f.id === "resume" && f.state === "filled")}
+            />
+          )}
 
           <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-6">
             <TabsList value={tab} className="overflow-x-auto">
@@ -185,14 +231,58 @@ export function WorkspaceView({ appId }: { appId: string }) {
               <TabsTrigger value="activity">Activity</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="apply" className="pt-5">
-              <FillReport
-                fields={fields}
-                onApprove={(id) => dispatch({ type: "approveField", appId: app.id, fieldId: id })}
-                onEdit={() => setTab("answers")}
-                onAddAnswer={() => setTab("answers")}
-                onCopy={() => toast("Copied", { description: "Paste it into the form." })}
-              />
+            <TabsContent value="apply" className="space-y-4 pt-5">
+              {employerHost && !editingLink ? (
+                <EmployerLinkBar
+                  host={employerHost}
+                  onChange={() => {
+                    setLinkDraft(employerLink ?? "");
+                    setLinkError(null);
+                    setEditingLink(true);
+                  }}
+                  onClear={() => {
+                    setEmployerLink(null);
+                    setLinkDraft("");
+                    toast("Cleared the employer link");
+                  }}
+                />
+              ) : null}
+              {editingLink ? (
+                <EmployerLinkField
+                  className="surface-card rounded-xl p-5 max-md:p-4"
+                  value={linkDraft}
+                  onChange={setLinkDraft}
+                  onSave={() => saveLink(linkDraft)}
+                  onCancel={() => {
+                    setEditingLink(false);
+                    setLinkError(null);
+                  }}
+                  error={linkError}
+                />
+              ) : null}
+              {notice ? (
+                <NoFormNotice
+                  kind={notice.kind}
+                  host={notice.host}
+                  links={notice.links}
+                  otherLinks={notice.otherLinks}
+                  employerNamed={notice.employerNamed}
+                  onUseLink={(l) => saveLink(l.url)}
+                  postingHref="#"
+                  link={linkDraft}
+                  onLinkChange={setLinkDraft}
+                  onSave={() => saveLink(linkDraft)}
+                  error={linkError}
+                />
+              ) : frame ? null : (
+                <FillReport
+                  fields={fields}
+                  onApprove={(id) => dispatch({ type: "approveField", appId: app.id, fieldId: id })}
+                  onEdit={() => setTab("answers")}
+                  onAddAnswer={() => setTab("answers")}
+                  onCopy={() => toast("Copied", { description: "Paste it into the form." })}
+                />
+              )}
             </TabsContent>
 
             <TabsContent value="resume" className="pt-5">
@@ -336,6 +426,18 @@ export function WorkspaceView({ appId }: { appId: string }) {
         </div>
         </CompanyHeader>
       </div>
+    </div>
+  );
+}
+
+function NotFilledYet() {
+  return (
+    <div className="surface-card rounded-xl p-5 max-md:p-4">
+      <div className="text-lg font-semibold tracking-tight text-fg">Not filled yet</div>
+      <p className="mt-0.5 text-sm text-fg-2">
+        Open &amp; fill opens the form in your Chrome and fills it from your profile and answers. Nothing is
+        submitted: you look it over and click submit yourself.
+      </p>
     </div>
   );
 }

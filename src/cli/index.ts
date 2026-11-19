@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { BACKFILL_DEFAULT_MAX } from '../core/pipeline/apply-backfill.js';
 import { loadEnv } from '../core/util/env.js';
 import { ensureDailyLogPath, pruneOldLogs } from '../core/util/logs.js';
 import {
@@ -18,6 +19,7 @@ import { configCheck } from './commands/config-check.js';
 import { configMigrateCommand } from './commands/config-migrate.js';
 import { dbInfo, dbMigrate } from './commands/db.js';
 import { funnelCommand } from './commands/funnel.js';
+import { industriesCommand } from './commands/industries.js';
 import { logosCommand } from './commands/logos.js';
 import { placesReclassifyCommand } from './commands/places.js';
 import { prepCommand } from './commands/prep.js';
@@ -26,6 +28,8 @@ import { rankCommand } from './commands/rank.js';
 import { resetCommand } from './commands/reset.js';
 import { scoreCommand } from './commands/score.js';
 import { scoutCommand } from './commands/scout.js';
+import { searchApplyOptions } from './commands/search-apply-options.js';
+import { searchEmployersCommand } from './commands/search-employers.js';
 import { statsCommand } from './commands/stats.js';
 import { whyCommand } from './commands/why.js';
 
@@ -97,6 +101,22 @@ program
   .action(boardsRelocate);
 
 program
+  .command('search:apply-options')
+  .description(
+    "fetch JSearch's apply links for shortlisted or prepped search jobs stored without them (one budgeted call per job)",
+  )
+  .option('--max <n>', 'at most this many jobs', String(BACKFILL_DEFAULT_MAX))
+  .action(searchApplyOptions);
+
+program
+  .command('search:employers')
+  .description(
+    'read the employer from the posting of each search job listed under "Remote", "Confidential" or "Stealth" (one model call each)',
+  )
+  .option('-l, --limit <n>', 'cap calls this run (0 = no LLM calls)')
+  .action(searchEmployersCommand);
+
+program
   .command('scout')
   .description('fetch active boards, upsert jobs, gate, prescore, and score')
   .option('--no-score', 'skip LLM scoring (discovery, gates and prescore only)')
@@ -105,8 +125,16 @@ program
 program
   .command('score')
   .description('gate, prescore and LLM-score jobs already in the database (no board fetch)')
-  .option('-l, --limit <n>', 'cap the number of new scores this run (0 = no LLM calls)')
+  .option('-l, --limit <n>', 'score this many, even above the config cap (0 = no LLM calls)')
+  .option('--places', 'score only jobs in the default places')
+  .option('--all', 'score every job still waiting')
   .action(scoreCommand);
+
+program
+  .command('industries')
+  .description('suggest an industry for each company from its name and open roles')
+  .option('-l, --limit <n>', 'cap new classifications this run (0 = no LLM calls)')
+  .action(industriesCommand);
 
 program
   .command('funnel')
@@ -183,6 +211,7 @@ program
   .command('apply')
   .description('open a job application form in Chrome and fill it (never submits)')
   .argument('<jobId>', 'job id to fill the application for')
+  .option('--plan', 'print what Open & fill would open, then exit (no Chrome, no model call)')
   .action(applyCommand);
 
 program

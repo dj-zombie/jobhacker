@@ -25,6 +25,8 @@ import {
   BAND_LABEL,
   EmptyState,
   FilterChip,
+  IndustryFilter,
+  IndustryMark,
   JobDetail,
   JobList,
   Kbd,
@@ -36,6 +38,7 @@ import {
   toast,
   toastUndo,
   useHotkeys,
+  type JobDetailData,
   type JobSummary,
   type TriageAction,
 } from "@/components/jobhacker";
@@ -43,9 +46,11 @@ import { useDemo } from "../App";
 import { openLogoPicker } from "../logo-store";
 import {
   DEFAULT_WHERE,
+  INDUSTRY_OPTIONS,
   PLACE_OPTIONS,
   areasOf,
   bandFor,
+  inDemoIndustry,
   inWhere,
   rank,
   sameWeights,
@@ -78,6 +83,29 @@ function byRank(a: JobSummary, b: JobSummary) {
 
 const LISTINGS_FRAME =
   typeof location !== "undefined" && new URLSearchParams(location.search).get("frame") === "refresh";
+
+// Shooting aid: `?frame=loading` holds the detail where the app is while a job's details load. The
+// list row's fields are there; the description, breakdown, flags, summary and dates aren't yet.
+const LOADING_FRAME =
+  typeof location !== "undefined" && new URLSearchParams(location.search).get("frame") === "loading";
+
+function asLoading(d: JobDetailData): JobDetailData {
+  return {
+    ...d,
+    employment: "…",
+    postedLabel: "…",
+    confirmedLabel: "…",
+    summary: undefined,
+    dimensions: undefined,
+    formula: undefined,
+    redFlags: undefined,
+    description: undefined,
+    prescoreNote: undefined,
+    model: undefined,
+    rubric: undefined,
+    scoredLabel: undefined,
+  };
+}
 
 export function TriageView({ view }: { view: View }) {
   const { state, dispatch, isMobile, openMobileNav, runScout, refreshListings } = useDemo();
@@ -128,9 +156,21 @@ export function TriageView({ view }: { view: View }) {
     return c;
   }, [viewRows, segOk]);
 
+  const industryCounts = React.useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const { job, s } of viewRows) {
+      if (!segOk(s) || !inWhere(job, state.where) || !job.industry) continue;
+      c[job.industry.id] = (c[job.industry.id] ?? 0) + 1;
+    }
+    return c;
+  }, [viewRows, segOk, state.where]);
+
   const base = React.useMemo(
-    () => viewRows.filter(({ job }) => inWhere(job, state.where)).map(({ s }) => s),
-    [viewRows, state.where],
+    () =>
+      viewRows
+        .filter(({ job }) => inWhere(job, state.where) && inDemoIndustry(job, state.industry))
+        .map(({ s }) => s),
+    [viewRows, state.where, state.industry],
   );
 
   const segCounts = React.useMemo(() => {
@@ -241,7 +281,7 @@ export function TriageView({ view }: { view: View }) {
         toast(`Scored ${total} jobs`, {
           description: `${matches.length} new ${matches.length === 1 ? "match" : "matches"}. They're in Top matches now.`,
           icon: <Sparkles className="text-strong" />,
-          action: { label: "View", onClick: () => navigate("/") },
+          action: { label: "View", onClick: () => navigate("/matches") },
         });
       }
     }, 60);
@@ -311,12 +351,27 @@ export function TriageView({ view }: { view: View }) {
 
   const detailEl = detail ? (
     <JobDetail
-      job={detail}
+      job={LOADING_FRAME ? asLoading(detail) : detail}
+      loading={LOADING_FRAME}
       onAction={(a) => act(detail.id, a)}
       onTune={() => dispatch({ type: "tune", open: true })}
       onEditLogo={() => openLogoPicker(detail.company)}
       onScore={detail.score == null ? scoreOne : undefined}
       context={{ label: meta.title, dock: whereLabel, index: selIndex + 1, total: items.length }}
+      industry={
+        selJob ? (
+          <IndustryMark
+            options={[...INDUSTRY_OPTIONS]}
+            industryId={selJob.industry?.id ?? null}
+            status={selJob.industry?.status ?? null}
+            onSet={(id) => {
+              if (id !== "games" && id !== "audio" && id !== "devtools") return;
+              dispatch({ type: "companyIndustry", company: selJob.company, industryId: id });
+            }}
+            onClear={() => dispatch({ type: "companyIndustry", company: selJob.company, industryId: null })}
+          />
+        ) : null
+      }
       primary={
         view === "shortlist"
           ? { label: "Prepare application", icon: <FileText />, onClick: () => prepare(detail.id), kbd: "S" }
@@ -365,7 +420,7 @@ export function TriageView({ view }: { view: View }) {
           </>
         }
         action={
-          <Button size="sm" variant="secondary" onClick={() => navigate("/")}>
+          <Button size="sm" variant="secondary" onClick={() => navigate("/matches")}>
             Go to Top matches
           </Button>
         }
@@ -444,7 +499,7 @@ export function TriageView({ view }: { view: View }) {
         kicker="Triage"
         title={meta.title}
         art={deckSkull}
-        glitchKey={`${state.segment}|${state.where.join(",")}`}
+        glitchKey={`${state.segment}|${state.where.join(",")}|${state.industry ?? ""}`}
         count={view === "top" ? undefined : formatCount(items.length)}
         leading={
           isMobile ? (
@@ -465,6 +520,15 @@ export function TriageView({ view }: { view: View }) {
               value={state.where}
               onChange={(w) => dispatch({ type: "where", where: w })}
               options={PLACE_OPTIONS.map((o) => ({ ...o, count: placeCounts[o.id] ?? 0 }))}
+            />
+            <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-2 max-md:hidden" />
+            <IndustryFilter
+              value={state.industry}
+              onChange={(id) => dispatch({ type: "industry", industry: id })}
+              options={INDUSTRY_OPTIONS.map((option) => ({
+                ...option,
+                count: industryCounts[option.id] ?? 0,
+              }))}
             />
             <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-2 max-md:hidden" />
             <FilterChip
@@ -555,7 +619,7 @@ export function TriageView({ view }: { view: View }) {
         <div
           className={cn(
             "min-h-0",
-            isMobile ? "w-full" : "w-[44%] min-w-[340px] max-w-[600px] border-r border-line",
+            isMobile ? "w-full" : "w-[44%] min-w-[340px] max-w-[440px] shrink-0 border-r border-line",
           )}
         >
           <JobList

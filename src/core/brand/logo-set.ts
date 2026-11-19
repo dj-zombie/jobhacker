@@ -2,7 +2,7 @@ import type { Criteria } from '../config/schemas.js';
 import type { Db } from '../db/client.js';
 import { type DomainRecord, domainsRepo } from '../db/repo/domains.js';
 import { companies } from '../db/schema.js';
-import { rankedList } from '../pipeline/ranked.js';
+import { rankedList, rankingOf } from '../pipeline/ranked.js';
 import type { Clock } from '../util/clock.js';
 import { normalizeCompanyName } from '../util/hash.js';
 import { sameSiteIconUrl } from './site-icon.js';
@@ -31,7 +31,7 @@ export function allCompanyKeys(db: Db): Map<string, string> {
  * isn't skipped or archived. Every place counts. Ranking is `rank.ts`.
  */
 export function logoSetKeys(db: Db, clock: Clock, criteria: Criteria): Map<string, string> {
-  const ranked = rankedList(db, clock, { weights: criteria.weights, bands: criteria.bands });
+  const ranked = rankedList(db, clock, rankingOf(criteria));
   const keys = new Map<string, string>();
   for (const row of ranked) {
     if (row.verdict !== 'strong' && row.verdict !== 'maybe') continue;
@@ -88,7 +88,7 @@ export interface LogoCompany {
  * qualifying job in score order), then by name. `null` state means no row yet.
  */
 export function logoCompanies(db: Db, clock: Clock, criteria: Criteria): LogoCompany[] {
-  const ranked = rankedList(db, clock, { weights: criteria.weights, bands: criteria.bands });
+  const ranked = rankedList(db, clock, rankingOf(criteria));
   const best = new Map<string, { name: string; band: 'strong' | 'maybe' }>();
   for (const row of ranked) {
     if (row.verdict !== 'strong' && row.verdict !== 'maybe') continue;

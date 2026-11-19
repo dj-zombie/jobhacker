@@ -357,6 +357,16 @@ describe('explainJob', () => {
     const { db, clock } = setup([]);
     expect(explainJob(db, clock, 999, { criteria: CRITERIA })).toBeUndefined();
   });
+
+  it('names the company-list bump and adds the band gap before the cap', () => {
+    const { db, clock, ids } = setup([
+      { title: 'Senior Frontend Engineer', dims: { role_fit: 5, comp_fit: null }, fill: 4 },
+    ]);
+    const criteria = { ...CRITERIA, target_companies: ['Acme'] };
+    const report = explainJob(db, clock, ids[0] ?? 0, { criteria, current: CURRENT });
+    expect(report?.score).toMatchObject({ baseScore: 85, score: 100, cap: null });
+    expect(renderWhy(report ?? never())).toContain('target:    +20 (Acme)');
+  });
 });
 
 function never(): never {

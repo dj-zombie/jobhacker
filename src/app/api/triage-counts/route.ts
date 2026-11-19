@@ -3,7 +3,7 @@ import { bandsSchema } from '../../../core/config/schemas.js';
 import { areaIds, whereDefault } from '../../../core/pipeline/areas.js';
 import { decodeWeights } from '../../lib/format.js';
 import { getTriageCounts, getUiConfig } from '../../lib/queries.js';
-import { parseWhereParam } from '../../lib/triage-url.js';
+import { parseIndustryParam, parseWhereParam } from '../../lib/triage-url.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +22,10 @@ export function GET(request: Request) {
     areaIds(config.criteria),
     whereDefault(config.criteria),
   );
+  const industry = parseIndustryParam(
+    params.get('industry'),
+    (config.criteria.industries ?? []).map((row) => row.id),
+  );
   const weights = decodeWeights(params.get('w') ?? undefined) ?? undefined;
   const bandsRaw = params.get('bands');
   const [strong, maybe] = (bandsRaw ?? '').split(',').map(Number);
@@ -30,6 +34,7 @@ export function GET(request: Request) {
     getTriageCounts(config, where, {
       ...(weights ? { weights } : {}),
       ...(bands.success ? { bands: bands.data } : {}),
+      industry,
     }),
   );
 }

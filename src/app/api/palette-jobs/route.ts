@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { bandsSchema } from '../../../core/config/schemas.js';
 import { decodeWeights } from '../../lib/format.js';
-import { getPaletteJobs, getUiConfig } from '../../lib/queries.js';
+import { getIndustryPalette, getPaletteJobs, getUiConfig } from '../../lib/queries.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,15 +11,16 @@ export const dynamic = 'force-dynamic';
  */
 export function GET(request: Request) {
   const config = getUiConfig();
-  if (!config.ok) return NextResponse.json([]);
+  if (!config.ok) return NextResponse.json({ jobs: [], industries: [] });
   const params = new URL(request.url).searchParams;
   const weights = decodeWeights(params.get('w') ?? undefined) ?? undefined;
   const [strong, maybe] = (params.get('bands') ?? '').split(',').map(Number);
   const bands = bandsSchema.safeParse({ strong, maybe });
-  return NextResponse.json(
-    getPaletteJobs(config, {
+  return NextResponse.json({
+    jobs: getPaletteJobs(config, {
       ...(weights ? { weights } : {}),
       ...(bands.success ? { bands: bands.data } : {}),
     }),
-  );
+    industries: getIndustryPalette(config),
+  });
 }

@@ -8,9 +8,11 @@ import { z } from 'zod';
  * `form-answers.ts` checks every draft (choice in the offered options, numbers
  * and proper nouns grounded, essay source ids real) and turns anything that
  * fails into a `[NEEDS INPUT: …]` marker. Kris reviews every draft before he
- * submits. `VERSION` is bumped when the rules change.
+ * submits. A question may carry his own rough answer, a note from him, and a
+ * page he linked (D180, D181): the model rewrites from those and the profile.
+ * `VERSION` is bumped when the rules change.
  */
-export const VERSION = 'form-answers-2026-10-23';
+export const VERSION = 'form-answers-2026-11-11';
 
 export const FORM_ANSWERS_JOB_CHAR_CAP = 6_000;
 
@@ -38,6 +40,12 @@ export interface FormAnswersPromptQuestion {
   required: boolean;
   kind: 'text' | 'textarea' | 'choice';
   options: string[];
+  /** His rough answer, in his words, to rewrite. */
+  draft?: string;
+  /** His instruction for this question, when he typed one. Not a fact sheet. */
+  guidance?: string;
+  /** Text read from the link in his note. This is the work. */
+  source?: string;
 }
 
 export interface FormAnswersPromptInput {
@@ -75,6 +83,7 @@ export const FORM_ANSWERS_SYSTEM = [
   '- "text" questions get one or two sentences, or just the value when the question asks for',
   '  one (a date, a URL, a name). "textarea" questions get 60-150 words unless the',
   '  question asks for something else: specific, plain, no cliches, no greeting or sign-off.',
+  '  If the question states a length, such as two sentences or a word count, follow that.',
   '  List the ids of the experience bullets you drew on in "source_ids" (required for',
   '  textarea answers; [] otherwise).',
   '- "Why this company / role" questions: connect what the posting says about the work to',
@@ -91,7 +100,31 @@ function renderQuestion(q: FormAnswersPromptQuestion): string {
   const lines = [head];
   if (q.hint) lines.push(`    help text: ${q.hint}`);
   if (q.kind === 'choice') lines.push(`    options: ${q.options.map((o) => `"${o}"`).join(' | ')}`);
+  if (q.draft?.trim()) lines.push(`    Kris's draft:\n${q.draft.trim()}`);
+  if (q.guidance?.trim()) lines.push(`    Kris's note: ${q.guidance.trim()}`);
+  if (q.source?.trim()) lines.push(`    Source page he linked:\n${q.source.trim()}`);
   return lines.join('\n');
+}
+
+const GUIDED_RULES = [
+  'Some questions carry his own draft, a note, or a page he linked. For those:',
+  '- Rewrite his draft into a strong answer. Keep his meaning, his facts and his voice.',
+  '  Fix grammar, cut filler, make it specific, and tie it to his profile where that helps.',
+  '- Follow his note. It is an instruction, not a biography. You may say he is interested',
+  '  in, or excited about, whatever the note or the draft says he is.',
+  '- Facts about him still come only from the profile, the standard answers, the',
+  '  preferences, his draft and his note. Do not add employers, titles, dates or metrics.',
+  '- "Source page he linked" is the work he means. Name it as the page does (title,',
+  '  authors). Do not add a number or a year from it, and do not name a different work.',
+  '  If you include its link, put it in parentheses right after the title.',
+  '- If the question asks for a paper, article or post and none is named in his draft,',
+  '  his note or a linked page, set answer to null and needs_input to what you need.',
+  '  Never invent a citation.',
+  '- source_ids may be [] for these questions.',
+].join('\n');
+
+function isGuided(q: FormAnswersPromptQuestion): boolean {
+  return Boolean(q.draft?.trim() || q.guidance?.trim() || q.source?.trim());
 }
 
 export function formAnswersUserPrompt(input: FormAnswersPromptInput): string {
@@ -116,6 +149,9 @@ export function formAnswersUserPrompt(input: FormAnswersPromptInput): string {
     '## Questions on the application form',
     input.questions.map(renderQuestion).join('\n'),
   );
+  if (input.questions.some(isGuided)) {
+    parts.push('', "## Kris's drafts and notes", GUIDED_RULES);
+  }
   if (input.violations && input.violations.length > 0) {
     parts.push(
       '',

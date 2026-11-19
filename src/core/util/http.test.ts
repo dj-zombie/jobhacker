@@ -93,6 +93,29 @@ describe('createHttp', () => {
     expect(missing.sleeps).toEqual([]);
   });
 
+  it("says a hung request timed out, using that call's timeout", async () => {
+    const { http } = harness((_input, init) => {
+      return new Promise((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) {
+          reject(new Error('missing signal'));
+          return;
+        }
+        const onAbort = () => {
+          reject(new DOMException('This operation was aborted', 'AbortError'));
+        };
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+      });
+    });
+    await expect(
+      http.getJson('https://api.openwebninja.com/jsearch/search?query=x', {
+        maxTries: 1,
+        timeoutMs: 30,
+      }),
+    ).rejects.toThrow(/network error for .* timed out after 30ms/);
+  });
+
   it('retries network errors up to 3 tries and does not retry invalid JSON', async () => {
     let calls = 0;
     const network = harness(async () => {

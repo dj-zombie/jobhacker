@@ -179,13 +179,38 @@ describe('fillView', () => {
     expect(view({ report: parsed }).rows).toHaveLength(11);
   });
 
+  it("reads the report's ATS: a JSearch hit filled on Ashby has a filler", () => {
+    expect(view({ ats: 'jsearch' }).hasAdapter).toBe(true);
+    expect(view({ ats: 'jsearch', report: report({ ats: 'jsearch' }) }).hasAdapter).toBe(false);
+    expect(view({ ats: 'jsearch', report: null }).hasAdapter).toBe(false);
+  });
+
+  it('passes a no-form report through, and parses one stored', () => {
+    const stored = {
+      ats: 'jsearch',
+      url: 'https://www.jobleads.com/review',
+      filled: [],
+      unfilled: [],
+      skipped_eeo: [],
+      self_identification: [],
+      resumeAttached: false,
+      noForm: { reason: 'no name or email field' },
+    };
+    const parsed = parseStoredReport(stored);
+    expect(parsed?.noForm).toEqual({ reason: 'no name or email field' });
+    expect(view({ ats: 'jsearch', report: parsed }).noForm).toEqual({
+      reason: 'no name or email field',
+    });
+    expect(view().noForm).toBeNull();
+  });
+
   it('reads an unparseable stored report as not filled', () => {
     expect(parseStoredReport(null)).toBeNull();
     expect(parseStoredReport({ ats: 'ashby' })).toBeNull();
   });
 
   it('opens the copy-paste fallback when there is no filler, no fields, or mostly blanks', () => {
-    expect(view({ ats: 'workday' }).fallbackOpen).toBe(true);
+    expect(view({ ats: 'workday', report: report({ ats: 'workday' }) }).fallbackOpen).toBe(true);
     expect(view({ report: report({ filled: [], unfilled: [] }) }).fallbackOpen).toBe(true);
     const mostlyBlank = report({
       filled: [{ field: 'Email', via: 'profile', source: 'contact.email' }],

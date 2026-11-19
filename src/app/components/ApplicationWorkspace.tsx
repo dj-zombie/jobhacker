@@ -1,10 +1,14 @@
 'use client';
 
 import {
+  type ApplyLink,
   CompanyHeader,
+  EmployerLinkBar,
+  EmployerLinkField,
   FillReadiness,
   FillReport,
   Hint,
+  NoFormNotice,
   RemoteChip,
   ScorePill,
   toast,
@@ -44,7 +48,9 @@ import {
   markSubmittedAction,
   openAndFill,
   setApplicationStatusAction,
+  setApplyLinkAction,
 } from '../lib/actions.js';
+import { play } from '../lib/sfx.js';
 import { STATUS_CHIP, STATUS_LABEL, STATUS_ORDER, statusChipClass } from '../lib/status.js';
 import { headerLogosFor } from '../lib/triage.js';
 import type { WorkspaceData } from '../lib/workspace-types.js';
@@ -73,11 +79,16 @@ function shortDate(iso: string): string {
 }
 
 function failed(title: string, error?: string) {
+  play('error');
   toast(title, { description: error, icon: <TriangleAlert className="text-danger" /> });
 }
 
 /** Why the copy-paste answers are open, or what they're for when they aren't. */
 function fallbackReason(data: WorkspaceData): string {
+  if (data.apply.plan.kind === 'stop') {
+    return "Open & fill won't type into a job board. Copy these into the employer's own form.";
+  }
+  if (data.apply.noForm) return "Copy these into the employer's form once you find it.";
   if (!data.fill.hasAdapter) {
     return "There's no form filler built for this site, so Open & fill maps what it can from your profile. Copy the rest from here.";
   }
@@ -111,6 +122,12 @@ export function ApplicationWorkspace({
     null,
   );
   const [coverFocus, setCoverFocus] = React.useState(0);
+  // The employer-link field: its draft, a refusal, and which save is in flight:
+  // 'field', 'clear', or the URL of the Use this link that was pressed.
+  const [linkDraft, setLinkDraft] = React.useState('');
+  const [linkError, setLinkError] = React.useState<string | null>(null);
+  const [linkSaving, setLinkSaving] = React.useState<string | null>(null);
+  const [editingLink, setEditingLink] = React.useState(false);
   // A write shows at once; the refresh that follows can take a second or two.
   const [shown, setShown] = React.useState({ status: data.status, submitted: false });
   const [lastStatus, setLastStatus] = React.useState(data.status);
@@ -197,12 +214,67 @@ export function ApplicationWorkspace({
     toast('Fill this one on the form in Chrome', { description: row.note ?? row.label });
   };
 
+  const { plan, employerLink } = data.apply;
+  const notice =
+    plan.kind === 'stop'
+      ? {
+          kind: 'job-board' as const,
+          host: plan.host,
+          links: plan.links,
+          otherLinks: plan.otherLinks,
+          employerNamed: plan.employerNamed,
+        }
+      : data.apply.noForm
+        ? {
+            kind: 'no-form' as const,
+            host: data.apply.noForm.host,
+            links: [],
+            otherLinks: 0,
+            employerNamed: true,
+          }
+        : null;
+
+  const saveLink = async (value: string | null, using: string, from: 'pasted' | 'option') => {
+    setLinkSaving(using);
+    const res = await setApplyLinkAction(applicationId, value, from);
+    setLinkSaving(null);
+    if (!res.ok) {
+      play('error');
+      setLinkError(res.error);
+      if (from === 'option') setEditingLink(true);
+      return;
+    }
+    setLinkError(null);
+    setLinkDraft('');
+    setEditingLink(false);
+    toast(res.host ? 'Saved the employer link' : 'Cleared the employer link', {
+      description: res.host ? `Open & fill opens ${res.host}.` : undefined,
+      icon: <Check className="text-strong" />,
+    });
+    router.refresh();
+  };
+  const useLink = (link: ApplyLink) => void saveLink(link.url, link.url, 'option');
+
   const fill = async () => {
     setFilling(true);
     setChromeDown(null);
     const res = await openAndFill(jobId);
     setFilling(false);
-    if (res.ok) {
+    if (res.ok && res.skipped) {
+      toast(`Nothing to fill on ${res.skipped.host}`, {
+        description: "It's a job board, so Chrome wasn't opened.",
+        icon: <Wand2 className="text-info" />,
+      });
+      setTab('apply');
+      router.refresh();
+    } else if (res.ok && res.noForm) {
+      toast(`No application form on ${res.noForm.host}`, {
+        description: 'Nothing was filled. The tab is still open in Chrome.',
+        icon: <Wand2 className="text-info" />,
+      });
+      setTab('apply');
+      router.refresh();
+    } else if (res.ok) {
       const filled =
         (res.report?.filled.length ?? 0) + (res.report?.self_identification.length ?? 0);
       const drafted = res.report?.filled.filter((f) => f.via === 'draft').length ?? 0;
@@ -220,6 +292,7 @@ export function ApplicationWorkspace({
     } else if (res.needsChrome) {
       setChromeDown(res.launchCommand ?? '');
       setTab('apply');
+      play('error');
       toast("Chrome isn't running", { description: 'Start it, then press Open & fill again.' });
     } else {
       failed("Couldn't fill the application", res.error);
@@ -231,6 +304,7 @@ export function ApplicationWorkspace({
     const res = await markSubmittedAction(jobId);
     setSubmitting(false);
     if (!res.ok) return failed("Couldn't mark it submitted", res.error);
+    if (!res.already) play('submitted');
     if (!res.already && status === 'prepped') {
       adjustCounts({ inProgress: -1, submitted: 1 });
     }
@@ -361,7 +435,7 @@ export function ApplicationWorkspace({
         >
           <div className="mx-auto max-w-4xl px-6 py-6 max-md:px-4">
             {chromeDown !== null ? <ChromeDownNotice message={chromeDown} /> : null}
-            {data.filled ? (
+            {notice ? null : data.filled ? (
               <FillReadiness
                 filled={count('filled')}
                 review={review}
@@ -390,8 +464,57 @@ export function ApplicationWorkspace({
                 <TabsTrigger value="activity">Activity</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="apply" className="pt-5">
-                {data.filled ? (
+              <TabsContent value="apply" className="space-y-4 pt-5">
+                {employerLink && !editingLink ? (
+                  <EmployerLinkBar
+                    host={employerLink.host}
+                    onChange={() => {
+                      setLinkDraft(employerLink.url);
+                      setLinkError(null);
+                      setEditingLink(true);
+                    }}
+                    onClear={() => void saveLink(null, 'clear', 'pasted')}
+                    clearing={linkSaving === 'clear'}
+                  />
+                ) : null}
+                {editingLink ? (
+                  <EmployerLinkField
+                    className="surface-card rounded-xl p-5 max-md:p-4"
+                    value={linkDraft}
+                    onChange={setLinkDraft}
+                    onSave={() => void saveLink(linkDraft, 'field', 'pasted')}
+                    onCancel={() => {
+                      setEditingLink(false);
+                      setLinkError(null);
+                    }}
+                    saving={linkSaving === 'field'}
+                    error={linkError}
+                  />
+                ) : null}
+                {notice ? (
+                  <NoFormNotice
+                    kind={notice.kind}
+                    host={notice.host}
+                    links={notice.links}
+                    otherLinks={notice.otherLinks}
+                    employerNamed={notice.employerNamed}
+                    onUseLink={useLink}
+                    usingUrl={
+                      linkSaving !== null && linkSaving !== 'field' && linkSaving !== 'clear'
+                        ? linkSaving
+                        : null
+                    }
+                    postingHref={`/job/${jobId}/posting`}
+                    link={editingLink ? '' : linkDraft}
+                    onLinkChange={(value) => {
+                      setLinkDraft(value);
+                      if (linkError) setLinkError(null);
+                    }}
+                    onSave={() => void saveLink(linkDraft, 'field', 'pasted')}
+                    saving={linkSaving === 'field'}
+                    error={editingLink ? null : linkError}
+                  />
+                ) : data.filled ? (
                   <FillReport
                     fields={rows}
                     onApprove={(id) => void approve(id)}

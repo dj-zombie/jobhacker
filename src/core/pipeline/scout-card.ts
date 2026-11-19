@@ -2,7 +2,7 @@ import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { BOARD_ATS, type Criteria, LEGACY_SOURCES, SEARCH_ATS } from '../config/schemas.js';
 import type { Db } from '../db/client.js';
-import { ABANDONED_AFTER_MS, runsRepo } from '../db/repo/runs.js';
+import { runsRepo, scoutRunIsLive } from '../db/repo/runs.js';
 import { companies, jobs, runs } from '../db/schema.js';
 import { monthlyUsage } from '../llm/usage.js';
 import { callsThisMonth, creditsThisMonth } from '../sources/budget.js';
@@ -66,8 +66,6 @@ export interface ScoutCardData {
   newLastRun: number;
   modelCalls: number;
 }
-
-export { ABANDONED_AFTER_MS };
 
 /**
  * A finished scout this many days old, or none at all, means the listings are stale.
@@ -243,6 +241,9 @@ function searchNotice(ats: string, message: string): ScoutNotice {
   if (status === 401 || status === 403) {
     return note(`${name} failed: the request was refused (${status}). Check the API key.`);
   }
+  if (/timed out|timeout|operation was aborted/i.test(message)) {
+    return note(`${name} failed: the request timed out. Run scout again.`);
+  }
   if (!message) return note(`${name} failed in the last run. Run scout again.`);
   return note(`${name} failed: ${detail(message)}. Run scout again.`);
 }
@@ -297,7 +298,10 @@ export function scoutCard(db: Db, clock: Clock, criteria: Criteria): ScoutCardDa
 
   const startedAt = header.startedAt ?? null;
   const unfinished = header.present && header.running === true && startedAt !== null;
-  const running = unfinished && nowMs - Date.parse(startedAt) < ABANDONED_AFTER_MS;
+  const running =
+    startedAt !== null &&
+    unfinished &&
+    scoutRunIsLive({ startedAt, finishedAt: null, stats: run?.stats }, nowMs);
 
   if (unfinished && !running) {
     failed = true;

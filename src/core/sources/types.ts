@@ -37,6 +37,19 @@ export interface NormalizedPosting {
    * at scout time (J9).
    */
   companyWebsite?: string | null;
+  /**
+   * The other places a search hit can be applied to (JSearch's `apply_options`),
+   * stored on `jobs.apply_options`. Null when the source sent none. Undefined
+   * for sources that never send them, which leaves the stored value alone.
+   */
+  applyOptions?: ApplyOption[] | null;
+}
+
+/** One apply link a search source listed for a job: who hosts it, and whether it's the employer's. */
+export interface ApplyOption {
+  publisher: string;
+  url: string;
+  direct: boolean;
 }
 
 export interface ParsedBoard<T> {

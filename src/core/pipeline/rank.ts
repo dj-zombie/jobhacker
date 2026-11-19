@@ -11,6 +11,10 @@ import type { Dimensions, Verdict } from '../db/schema.js';
  * A null dimension ("not stated", e.g. pay) drops out of both sums, so it is
  * neither a penalty nor a bonus. A known impossibility stays visible but caps
  * the local score: 0 in role/seniority/logistics → `no`; 1 → below `strong`.
+ *
+ * A listed company (J27) adds `bands.strong - bands.maybe` after the base
+ * score and before that cap. The points are not stored. An unscored job,
+ * whose base is null, stays unscored.
  */
 
 export const CRITICAL_DIMENSIONS = [
@@ -28,10 +32,22 @@ export interface CriticalCap {
   maxScore: number;
 }
 
+export interface RankOptions {
+  /** Listed company (J27). Adds the band gap, then the critical cap still applies. */
+  target?: boolean;
+}
+
+/** Points added for a listed company, before the cap. */
+export interface TargetBump {
+  points: number;
+}
+
 export interface RankComputation {
   baseScore: number | null;
   score: number | null;
   cap: CriticalCap | null;
+  /** Set when the company is listed and the job has a base score. */
+  target: TargetBump | null;
 }
 
 export interface DimensionContribution {
@@ -71,20 +87,34 @@ export function criticalCap(dims: Dimensions, bands: Bands): CriticalCap | null 
   return null;
 }
 
-/** Base score plus the local critical-dimension cap used for ranking and explanation. */
-export function computeRank(dims: Dimensions, weights: Weights, bands: Bands): RankComputation {
+/** Base score, the listed-company bump, then the critical-dimension cap. */
+export function computeRank(
+  dims: Dimensions,
+  weights: Weights,
+  bands: Bands,
+  options?: RankOptions,
+): RankComputation {
   const baseScore = baseRankScore(dims, weights);
   const cap = criticalCap(dims, bands);
+  const listed = options?.target === true && baseScore !== null;
+  const points = listed ? bands.strong - bands.maybe : 0;
+  const lifted = baseScore === null ? null : Math.min(100, baseScore + points);
   return {
     baseScore,
-    score: baseScore === null || cap === null ? baseScore : Math.min(baseScore, cap.maxScore),
+    score: lifted === null || cap === null ? lifted : Math.min(lifted, cap.maxScore),
     cap,
+    target: listed ? { points } : null,
   };
 }
 
 /** Final capped score. */
-export function rankScore(dims: Dimensions, weights: Weights, bands: Bands): number | null {
-  return computeRank(dims, weights, bands).score;
+export function rankScore(
+  dims: Dimensions,
+  weights: Weights,
+  bands: Bands,
+  options?: RankOptions,
+): number | null {
+  return computeRank(dims, weights, bands, options).score;
 }
 
 export function verdictFor(score: number | null, bands: Bands): Verdict {
@@ -109,6 +139,8 @@ export function contributions(dims: Dimensions, weights: Weights): DimensionCont
 export interface Rankable {
   jobId: number;
   dimensions: Dimensions;
+  /** Listed company. Absent is the same as false. */
+  target?: boolean;
 }
 
 export type Ranked<T extends Rankable> = T &
@@ -124,7 +156,7 @@ export function rankJobs<T extends Rankable>(
 ): Ranked<T>[] {
   return rows
     .map((row) => {
-      const computed = computeRank(row.dimensions, weights, bands);
+      const computed = computeRank(row.dimensions, weights, bands, { target: row.target === true });
       return { ...row, ...computed, verdict: verdictFor(computed.score, bands) };
     })
     .sort((a, b) => {

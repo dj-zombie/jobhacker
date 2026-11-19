@@ -10,6 +10,18 @@ import { useAcquire } from "./use-acquire";
 
 const PAD = 8;
 
+/**
+ * A comfortable row's height before it renders: a 22px title line, a 16px meta
+ * line and the 50px score column, plus a line when the title or the meta looks
+ * long. Measuring corrects it.
+ */
+function estimateRow(job: JobSummary | undefined): number {
+  if (!job) return 66;
+  const meta = job.company.length + job.location.length + (job.compLabel?.length ?? 0);
+  const text = 42 + (job.title.length > 44 ? 22 : 0) + (meta > 56 ? 18 : 0);
+  return Math.max(text, 50) + 16;
+}
+
 /** A row renders again only when its job, selection or density changes, so J and K touch two rows. */
 const ListRow = React.memo(function ListRow({
   job,
@@ -64,7 +76,8 @@ export function JobList({
   "aria-label"?: string;
 }) {
   const parentRef = React.useRef<HTMLDivElement>(null);
-  const rowH = density === "compact" ? 44 : 66;
+  const compact = density === "compact";
+  const rowH = compact ? 44 : 66;
 
   // Rows hold on to one handler, which always calls the newest onAction.
   const latestAction = React.useRef(onAction);
@@ -73,10 +86,11 @@ export function JobList({
   });
   const act = React.useCallback((id: string, action: TriageAction) => latestAction.current?.(id, action), []);
 
+  // Comfortable rows wrap, so each is measured once it renders. The estimate guesses a second title line.
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => rowH,
+    estimateSize: (i) => (compact ? rowH : estimateRow(items[i])),
     overscan: 10,
     paddingStart: PAD,
     paddingEnd: PAD,
@@ -89,6 +103,13 @@ export function JobList({
   }, [rowH, virtualizer]);
 
   const selIndex = selectedId ? items.findIndex((j) => j.id === selectedId) : -1;
+  const virtualItems = virtualizer.getVirtualItems();
+  const selRow = selIndex >= 0 ? virtualizer.measurementsCache[selIndex] : undefined;
+  const selTop = selRow?.start ?? PAD;
+  const selH = selRow?.size ?? rowH;
+  const box = { top: selTop + 1, height: selH - 2 };
+  const boxRef = React.useRef(box);
+  boxRef.current = box;
 
   React.useEffect(() => {
     if (selIndex >= 0) virtualizer.scrollToIndex(selIndex, { align: "auto" });
@@ -101,8 +122,7 @@ export function JobList({
     `${selIndex}|${rowH}|${items.length}`,
     () => {
       if (selIndex < 0) return;
-      const box = { top: PAD + selIndex * rowH + 1, height: rowH - 2 };
-      lockTo(lockRef.current, box, !placed.current ? { instant: true } : held.current ? { spread: 6 } : {});
+      lockTo(lockRef.current, boxRef.current, !placed.current ? { instant: true } : held.current ? { spread: 6 } : {});
       placed.current = true;
       held.current = false;
     },
@@ -112,6 +132,16 @@ export function JobList({
       releaseLock(lockRef.current);
     },
   );
+
+  // A row measured or re-wrapped under a resting selection: the lock follows without replaying the acquire.
+  const lastSel = React.useRef(selIndex);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the selected row's measured box changes
+  React.useLayoutEffect(() => {
+    const moved = lastSel.current !== selIndex;
+    lastSel.current = selIndex;
+    if (moved || !placed.current || held.current || selIndex < 0) return;
+    lockTo(lockRef.current, boxRef.current, { instant: true });
+  }, [selIndex, box.top, box.height]);
 
   // Stagger the first screenful of rows in on mount, then stop animating entries.
   const [entered, setEntered] = React.useState(false);
@@ -146,15 +176,15 @@ export function JobList({
             aria-hidden
             className="pointer-events-none absolute inset-x-0 top-0 rounded-md bg-brand-wash ring-1 ring-inset ring-brand/45"
             style={{
-              height: rowH - 4,
-              transform: `translateY(${PAD + selIndex * rowH + 2}px)`,
+              height: selH - 4,
+              transform: `translateY(${selTop + 2}px)`,
               transition: "transform 300ms var(--ease-out-expo), height 200ms var(--ease-out-expo)",
             }}
           />
         ) : null}
         <TargetLock ref={lockRef} corner={9} className={selIndex < 0 ? "hidden" : undefined} />
 
-        {virtualizer.getVirtualItems().map((v) => {
+        {virtualItems.map((v) => {
           const job = items[v.index];
           if (!job) return null;
           const selected = job.id === selectedId;
@@ -162,6 +192,8 @@ export function JobList({
           return (
             <div
               key={v.key}
+              ref={virtualizer.measureElement}
+              data-index={v.index}
               id={`job-${job.id}`}
               role="option"
               aria-selected={selected}
@@ -175,13 +207,12 @@ export function JobList({
               }}
               className="absolute inset-x-0 top-0 overflow-hidden py-0.5"
               style={{
-                height: rowH,
                 transform: `translateY(${v.start}px)`,
                 transition: "transform 320ms var(--ease-out-expo)",
               }}
             >
               <div
-                className={cn("h-full", !entered && v.index < 18 && "animate-rise-in", leaving && "animate-glitch-out")}
+                className={cn(!entered && v.index < 18 && "animate-rise-in", leaving && "animate-glitch-out")}
                 style={!entered ? { animationDelay: `${Math.min(v.index, 18) * 22}ms` } : undefined}
               >
                 <ListRow job={job} selected={selected} density={density} onAction={onAction ? act : undefined} />

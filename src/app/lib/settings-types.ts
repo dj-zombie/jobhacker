@@ -1,10 +1,17 @@
 import type { SectionInputs } from '../../core/config/profile-sections.js';
+import type { TargetCompanyReport } from '../../core/config/settings.js';
 import type { CostBasis } from '../../core/config/staleness.js';
 
-export type { SettingsSaveResult } from '../../core/config/settings.js';
+export type { SettingsSaveResult, TargetCompanyReport } from '../../core/config/settings.js';
 
-/** The four Settings routes (J18). */
-export const SETTINGS_ROUTES = ['profile', 'answers', 'self-id', 'preferences'] as const;
+/** The Settings routes. Companies is J27; the other four are J18. */
+export const SETTINGS_ROUTES = [
+  'profile',
+  'answers',
+  'self-id',
+  'preferences',
+  'companies',
+] as const;
 export type SettingsRoute = (typeof SETTINGS_ROUTES)[number];
 
 /** The sections the Profile route edits. Self-identification has its own route. */
@@ -28,6 +35,7 @@ export type SettingsData =
   | { ok: true; route: 'answers'; answers: SectionInputs['standard_answers'] }
   | { ok: true; route: 'self-id'; selfId: SectionInputs['self_identification'] }
   | { ok: true; route: 'preferences'; preferences: string; rescore: RescoreBasisView }
+  | { ok: true; route: 'companies'; text: string; report: TargetCompanyReport }
   | { ok: false; route: SettingsRoute; file: string; issues: string[] };
 
 export type SettingsDataFor<R extends SettingsRoute> =

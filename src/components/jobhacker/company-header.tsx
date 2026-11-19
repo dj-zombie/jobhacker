@@ -45,6 +45,8 @@ const DUOTONE = {
 } as const;
 const DUOTONE_ID = "jh-duotone";
 const SIGNAL_CELLS = 10;
+/** How long the beam pauses for an acquire: the lock's 520 ms glide, its longest part. */
+const ACQUIRE_HOLD_MS = 520;
 
 /**
  * The top of a job, laid out like a game library's detail page: the company's
@@ -67,8 +69,9 @@ const SIGNAL_CELLS = 10;
  * viewfinder, and the HUD readout along its top. When the job changes and the
  * change settles, the monitor acquires it: new art wipes in under a hazard band,
  * the frame drops and the scanlines jolt, the readout types in, the counter rolls,
- * and a target lock flies from the viewfinder onto the cover. Changes in a burst
- * (J held down) skip all of that and acquire once, when the burst ends.
+ * and a target lock flies from the viewfinder onto the cover. The scan beam
+ * pauses while that plays. Changes in a burst (J held down) skip all of that
+ * and acquire once, when the burst ends.
  */
 export function CompanyHeader({
   company,
@@ -153,14 +156,21 @@ export function CompanyHeader({
   }, []);
 
   const fieldRef = React.useRef<HTMLDivElement>(null);
+  const release = React.useRef<number | undefined>(undefined);
+  const holdBeam = () => {
+    window.clearTimeout(release.current);
+    fieldRef.current?.setAttribute("data-hold", "");
+  };
   const calm = useAcquire(
     `${company}|${title}`,
     () => {
-      fieldRef.current?.removeAttribute("data-hold");
+      holdBeam();
+      release.current = window.setTimeout(() => fieldRef.current?.removeAttribute("data-hold"), ACQUIRE_HOLD_MS);
       acquire();
     },
-    () => fieldRef.current?.setAttribute("data-hold", ""),
+    holdBeam,
   );
+  React.useEffect(() => () => window.clearTimeout(release.current), []);
 
   function acquire() {
     titleRef.current?.classList.add("glitch-run");

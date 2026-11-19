@@ -1,6 +1,8 @@
 import type { Db } from '../db/client.js';
 import { liveScoringRun } from '../pipeline/score-run.js';
+import { type TargetCompanyReport, targetCompanyReport } from '../pipeline/target.js';
 import type { Clock } from '../util/clock.js';
+import { parseTargetCompanies, saveTargetCompanies } from './criteria-file.js';
 import { ConfigError } from './errors.js';
 import { loadConfigFile, loadPreferences } from './load.js';
 import { savePreferences } from './preferences-file.js';
@@ -24,8 +26,10 @@ export interface SettingsDeps {
   backupDir?: string;
 }
 
+export type { TargetCompanyReport };
+
 export type SettingsSaveResult<T> =
-  | { status: 'saved'; changed: boolean; value: T }
+  | { status: 'saved'; changed: boolean; value: T; report?: TargetCompanyReport }
   | {
       status: 'confirm';
       needsConfirm: true;
@@ -68,6 +72,29 @@ export function saveProfileSettings<S extends ProfileSection>(
     if (impact.changesScores && !confirmRescore) return confirm(impact, criteria);
     commitProfileEdit(edit, { clock: deps.clock, backupDir: deps.backupDir });
     return { status: 'saved', changed: true, value: saved() };
+  });
+}
+
+/** Save the company list. It does not change the score cache key, so it never asks first. */
+export function saveTargetCompanySettings(
+  deps: SettingsDeps,
+  text: unknown,
+): SettingsSaveResult<string> {
+  return guarded(deps, () => {
+    if (typeof text !== 'string') {
+      return { status: 'refused', error: NOT_SAVED, issues: ['companies: must be text'] };
+    }
+    const names = parseTargetCompanies(text);
+    const saved = saveTargetCompanies(deps.dir, names, {
+      clock: deps.clock,
+      backupDir: deps.backupDir,
+    });
+    return {
+      status: 'saved',
+      changed: saved.changed,
+      value: saved.names.join('\n'),
+      report: targetCompanyReport(deps.db, saved.names),
+    };
   });
 }
 

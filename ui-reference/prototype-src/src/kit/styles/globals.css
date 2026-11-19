@@ -204,7 +204,7 @@
   --animate-glitch-out: glitch-out 170ms steps(4, end) both;
   --animate-glitch-clip: glitch-clip 380ms steps(1, end) both;
   --animate-rise-in: rise-in 260ms var(--ease-out-expo) both;
-  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-skeleton: skeleton-pulse 1.4s var(--ease-in-out-quad) infinite;
   --animate-progress-sweep: progress-sweep 1.4s var(--ease-in-out-quad) infinite;
   --animate-dialog-in: dialog-in 240ms var(--ease-out-expo) both;
   --animate-menu-in: menu-in 160ms var(--ease-out-expo) both;
@@ -248,9 +248,8 @@
     60% { transform: scale(1.12); opacity: 1; }
     100% { transform: scale(1); }
   }
-  @keyframes shimmer {
-    from { background-position: 200% 0; }
-    to { background-position: -200% 0; }
+  @keyframes skeleton-pulse {
+    50% { opacity: 0.55; }
   }
   /* A 40%-wide line is fully off either edge at -70% and 170%. */
   @keyframes progress-sweep {
@@ -530,16 +529,9 @@
   -webkit-backdrop-filter: blur(16px) saturate(150%);
 }
 
-/* Loading placeholder sweep. */
+/* A loading placeholder's bar. The group of bars pulses with `animate-skeleton`, opacity only. */
 @utility skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-surface-2) 0%,
-    var(--color-surface-3) 50%,
-    var(--color-surface-2) 100%
-  );
-  background-size: 200% 100%;
-  animation: var(--animate-shimmer);
+  background-color: var(--color-surface-4);
 }
 
 /* Indeterminate progress: a line sweeping along the bottom edge, over the element's own background color. */

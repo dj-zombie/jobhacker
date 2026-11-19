@@ -4,7 +4,7 @@
 
 A **local-first, single-user** job-search assistant. It discovers postings from public ATS
 boards (Greenhouse, Lever, Ashby, SmartRecruiters, Breezy, Polymer) and optional search
-sources (JSearch with your own key, Hacker News "Who is hiring"), ranks them against your
+sources (JSearch and JobsPipe with your own keys, Hacker News "Who is hiring"), ranks them against your
 criteria, prepares tailored application materials, and fills application forms **in your own
 Chrome** — so you review and click **Submit** yourself.
 
@@ -98,16 +98,17 @@ your own in `config/criteria.yaml` (see `docs/reference/PLACES.md`).
 |---|---|
 | `config/profile.yaml` | **The only source of truth about you** — contact, experience bullets (with stable `id`s), skills, standard answers. Fill it in with facts you can stand behind. |
 | `config/preferences.md` | **What you want, in your own words**: roles, places, pay, what excites you, dealbreakers. The scoring model reads it as prose; the prescore uses lexical terms only to order spend, never to exclude. Editing it re-scores jobs on the next score run. |
-| `config/criteria.yaml` | Mechanical settings only: the hard gates (`max_age_days`, `company_blocklist`), six ranking weights, strong/maybe bands, the per-run scoring cap (`max_new_scores_per_run`) and models. The compatibility `prescore_floor` field must stay `0` until removed from the schema. Have a v1 file with title/location keyword lists? Run `pnpm cli config:migrate`: it keeps the old file as `criteria.v1.yaml` and drafts `preferences.md` from your keywords. |
+| `config/criteria.yaml` | Mechanical settings only: the hard gates (`max_age_days`, `company_blocklist`), the companies you most want (`target_companies`), six ranking weights, strong/maybe bands, the per-run scoring cap (`max_new_scores_per_run`) and models. The compatibility `prescore_floor` field must stay `0` until removed from the schema. Have a v1 file with title/location keyword lists? Run `pnpm cli config:migrate`: it keeps the old file as `criteria.v1.yaml` and drafts `preferences.md` from your keywords. |
 | `config/companies.yaml` | The ATS boards to scout. Add one easily with `pnpm cli companies:add <careers-url>` (it detects the ATS and verifies the board). |
 | `.env` | `ANTHROPIC_API_KEY=…` (required for scoring/prep). Optional: `DATABASE_PATH`, `JOBHACKER_CHROME_PATH` (where Chrome is, if it isn't found), `JOBHACKER_CDP_ENDPOINT` (the dedicated Chrome's debugging address, `http://127.0.0.1:9222` by default), and the search-source keys listed in `.env.example`. |
 
 **Editing in the app.** Once the app is running (`pnpm dev`), Setup → **Settings** edits
-`profile.yaml` (Profile, Answers, Self-ID) and `preferences.md` (Preferences). Each section saves
+`profile.yaml` (Profile, Answers, Self-ID), `preferences.md` (Preferences), and the company
+list in `criteria.yaml` (Companies). Each section saves
 on its own, is validated first, and changes only its own lines, so your comments stay. The previous
 file is copied to `data/backups/config/` before each save. An edit that would re-score your jobs
 (summary, skills, experience or preferences) says how many scores go stale, and roughly what
-re-scoring costs, before it saves. A save is refused while a scout or score run is going.
+re-scoring costs, before it saves. The company list re-ranks at once and does not re-score. A save is refused while a scout or score run is going.
 Hand-editing the files still works. Settings reads them fresh each time a page loads, and a save
 rewrites only its own section, so a hand edit elsewhere in the file survives. Reload the page after
 hand-editing a section, or saving that section in the app writes what the page showed.
@@ -155,7 +156,7 @@ pnpm dev           # start the review UI at http://localhost:3000
 
 `scout` discovers and scores jobs. The UI is where you triage, prep and track them.
 Only four things ever exclude a job: closed, duplicate, blocklisted company, or older than `max_age_days` (`0` = off). Everything else is a scored dimension, so nothing disappears silently. `pnpm cli funnel` shows where every job went, and `pnpm cli why <jobId>` explains one job.
-Scoring spends in prescore order up to `max_new_scores_per_run`. Jobs it doesn't reach stay visible on the **Unscored** tab, and the next `pnpm cli score` continues where it stopped.
+Scoring spends in prescore order up to `max_new_scores_per_run`, unless that run says otherwise: `pnpm cli score --limit 500`, `--places` (only your places), or `--all`. Jobs it doesn't reach stay visible on the **Unscored** tab, and the next `pnpm cli score` continues where it stopped. A scout stays at the config cap.
 To try discovery **without** spending anything on the LLM, use `pnpm cli scout --no-score`.
 The weight sliders on the queue page re-rank instantly with no LLM calls. "Save to criteria.yaml" keeps the weights. Critical role/seniority/logistics scores cap impossible jobs below the relevant verdict band without hiding them.
 

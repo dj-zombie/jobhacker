@@ -9,6 +9,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
 import { ATS_VALUES, type Dimension } from '../config/schemas.js';
+import type { ApplyOption } from '../sources/types.js';
 
 /** The four hard gates (invariant 8), in the order they are checked. */
 export const GATE_NAMES = ['closed', 'duplicate', 'blocklist', 'age'] as const;
@@ -90,6 +91,8 @@ export const jobs = sqliteTable(
     employmentType: text('employment_type'),
     url: text('url').notNull(),
     applyUrl: text('apply_url'),
+    /** A search hit's other apply links (JSearch `apply_options`); null when none were sent. */
+    applyOptions: text('apply_options', { mode: 'json' }).$type<ApplyOption[]>(),
     descriptionText: text('description_text').notNull().default(''),
     compMin: integer('comp_min'),
     compMax: integer('comp_max'),
@@ -206,6 +209,8 @@ export const applications = sqliteTable('applications', {
   coverNote: text('cover_note'),
   answers: text('answers', { mode: 'json' }).$type<Record<string, string>>(),
   fillReport: text('fill_report', { mode: 'json' }).$type<unknown>(),
+  /** The employer's own application link, set by Kris (J29). JobHacker never requests it. */
+  applyUrl: text('apply_url'),
   submittedAt: text('submitted_at'),
   followUpAt: text('follow_up_at'),
   notes: text('notes'),
@@ -275,6 +280,33 @@ export type DomainState = (typeof DOMAIN_STATES)[number];
  * One registrable domain per normalized company name (J9). Display only.
  * Nothing automatic overwrites `confirmed` or `none`.
  */
+/** How a company's industry was decided (J26). Kris's two beat a suggestion. */
+export const INDUSTRY_STATUSES = ['suggested', 'confirmed', 'cleared'] as const;
+export type IndustryStatus = (typeof INDUSTRY_STATUSES)[number];
+
+/**
+ * One industry per company, or none (J26). A view filter, never a gate.
+ * `confirmed` and `cleared` are Kris's decision and are not overwritten.
+ * `industry_id` is null when the answer is none.
+ */
+export const companyIndustry = sqliteTable(
+  'company_industry',
+  {
+    companyId: integer('company_id')
+      .primaryKey()
+      .references(() => companies.id, { onDelete: 'cascade' }),
+    industryId: text('industry_id'),
+    status: text('status', { enum: INDUSTRY_STATUSES }).notNull(),
+    reason: text('reason').notNull(),
+    inputHash: text('input_hash').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => ({
+    companyIdx: index('company_industry_company_idx').on(t.companyId),
+    industryIdx: index('company_industry_industry_idx').on(t.industryId),
+  }),
+);
+
 export const companyDomains = sqliteTable('company_domains', {
   companyKey: text('company_key').primaryKey(),
   name: text('name').notNull(),
@@ -296,6 +328,7 @@ export const schema = {
   events,
   runs,
   companyDomains,
+  companyIndustry,
 };
 
 /** Ordered list of table names, for row-count reporting (`db:info`). */
@@ -308,6 +341,7 @@ export const tableNames = [
   'events',
   'runs',
   'company_domains',
+  'company_industry',
 ] as const;
 
 export type Company = typeof companies.$inferSelect;

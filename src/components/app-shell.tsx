@@ -47,7 +47,10 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
+  SquareTerminal,
   TriangleAlert,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
 import { MotionConfig } from 'motion/react';
@@ -65,6 +68,7 @@ import {
   runScoutNow,
   turnOffBoard,
 } from '../app/lib/actions.js';
+import { play, soundEnabled, toggleMuted } from '../app/lib/sfx.js';
 import type {
   PaletteJob,
   ScoutCardView,
@@ -72,6 +76,11 @@ import type {
   ShellCounts,
 } from '../app/lib/shell-types.js';
 import { TRIAGE_PATH, paletteJobHref } from '../app/lib/triage-url.js';
+import {
+  industryAliasSet,
+  industryMatchValue,
+  paletteScore,
+} from '../core/pipeline/industry-match.js';
 import type { JobStatus } from '../core/pipeline/triage-view.js';
 
 const POLL_MS = 1000;
@@ -105,6 +114,7 @@ const SHORTCUTS: ShortcutGroup[] = [
     items: [
       { keys: ['⌘', 'K'], label: 'Search and commands' },
       { keys: ['⌘', 'B'], label: 'Collapse or expand the sidebar' },
+      { keys: ['M'], label: 'Mute or unmute sounds' },
       { keys: ['?'], label: 'This list' },
       { keys: ['Esc'], label: 'Close panel or dialog' },
     ],
@@ -199,6 +209,22 @@ export function useRefreshListings(): () => void {
   return React.useContext(Ctx).refreshListings;
 }
 
+/** The shell's live scout state, so a second ScoutCard (the dashboard's) mirrors the sidebar's. */
+export interface ScoutLive {
+  lastRunLabel: string;
+  boards: number;
+  newLastRun: number;
+  progress: ScoutCardView['progress'];
+  running: boolean;
+}
+
+const ScoutLiveCtx = React.createContext<ScoutLive | null>(null);
+
+/** Live scout state (null when there's no card yet, e.g. a config error). */
+export function useScoutLive(): ScoutLive | null {
+  return React.useContext(ScoutLiveCtx);
+}
+
 /** ⌘K's selected job, and the tune-panel request. The triage view consumes both. */
 export function usePaletteTarget(): {
   pendingJob: { id: string; token: number } | null;
@@ -249,11 +275,11 @@ const APPLICATION_LISTS: readonly string[] = [
 
 /**
  * Which nav item a URL belongs to, without the triage views' `where` and `seen`. A workspace,
- * `/applications/<id>`, belongs to In progress (UI-KIT § App shell).
- * `/?view=review|ranked` redirects to Top matches (J6).
+ * `/applications/<id>`, belongs to In progress (UI-KIT § App shell). `/` is the dashboard (J23),
+ * and a legacy `/?view=…` link redirects away on the server before it renders.
  */
-export function activeHrefFor(pathname: string, view: string | null): string {
-  if (pathname === '/') return view === null ? '/' : '';
+export function activeHrefFor(pathname: string): string {
+  if (pathname === '/') return '/';
   if (TRIAGE_PATHS.includes(pathname)) return pathname;
   if (APPLICATION_LISTS.includes(pathname)) return pathname;
   if (pathname === '/applications' || pathname.startsWith('/applications/')) return '/applications';
@@ -265,7 +291,7 @@ export function activeHrefFor(pathname: string, view: string | null): string {
 /** The triage view's `where` and `seen`, which the sidebar's triage links carry. */
 function triageQueryOf(params: URLSearchParams): string {
   const p = new URLSearchParams();
-  for (const key of ['where', 'seen']) {
+  for (const key of ['where', 'seen', 'industry']) {
     const value = params.get(key);
     if (value) p.set(key, value);
   }
@@ -281,6 +307,10 @@ function sectionsFor(
 ): NavSection[] {
   const c = counts;
   return [
+    {
+      label: 'Command',
+      items: [{ href: '/', label: 'Dashboard', icon: SquareTerminal }],
+    },
     {
       label: 'Triage',
       items: [
@@ -369,6 +399,8 @@ interface ShellProps {
   logos?: { clientId: string | null; names: string[] };
   /** Places a triage URL uses when `where` is absent. */
   whereDefault?: string[];
+  /** Industries ⌘K can open. Counts arrive when the palette fetches. */
+  industries?: { id: string; label: string; aliases: string[] }[];
   /** Pinned on a wide window. The root layout reads it from the cookie. */
   sidebar?: SidebarPreference;
   children?: React.ReactNode;
@@ -379,7 +411,7 @@ export function AppShell({ children, ...props }: ShellProps) {
     <LogoEditor clientId={props.logos?.clientId ?? null}>
       <React.Suspense
         fallback={
-          <ShellFrame {...props} activeHref="" query="" onTriage={false}>
+          <ShellFrame {...props} activeHref="" query="" onTriage={false} pathname="">
             {children}
           </ShellFrame>
         }
@@ -401,10 +433,11 @@ function ShellWithRoute(props: ShellProps) {
     if (current !== null) setLast(current);
   }, [current]);
   const query = current ?? last;
-  const active = activeHrefFor(pathname, params.get('view'));
+  const active = activeHrefFor(pathname);
   return (
     <ShellFrame
       {...props}
+      pathname={pathname}
       query={query}
       onTriage={current !== null}
       activeHref={TRIAGE_PATHS.includes(active) ? `${active}${query}` : active}
@@ -421,9 +454,11 @@ function ShellFrame({
   query,
   onTriage,
   whereDefault = [],
+  industries = [],
   sidebar = 'expanded',
+  pathname,
   children,
-}: ShellProps & { activeHref: string; query: string; onTriage: boolean }) {
+}: ShellProps & { activeHref: string; query: string; onTriage: boolean; pathname: string }) {
   const router = useRouter();
   const [foundLogos, setFoundLogos] = React.useState<ReadonlyMap<string, string>>(new Map());
   const noteLogo = React.useCallback((name: string, domain: string) => {
@@ -465,13 +500,18 @@ function ShellFrame({
 
   // Off the triage views the links keep the last Where, so the counts follow it: the layout's
   // are for the default Where, and a write elsewhere (Prepare application) brings new ones.
-  const lastWhere = new URLSearchParams(query).get('where');
+  const lastParams = new URLSearchParams(query);
+  const lastWhere = lastParams.get('where');
+  const lastIndustry = lastParams.get('industry');
   const pushed = viewCounts?.basis === counts;
   const { setCounts } = triage;
   React.useEffect(() => {
-    if (onTriage || !lastWhere || !counts || pushed) return;
+    if (onTriage || (!lastWhere && !lastIndustry) || !counts || pushed) return;
     const ctl = new AbortController();
-    fetch(`/api/triage-counts?where=${encodeURIComponent(lastWhere)}`, {
+    const q = new URLSearchParams();
+    if (lastWhere) q.set('where', lastWhere);
+    if (lastIndustry) q.set('industry', lastIndustry);
+    fetch(`/api/triage-counts?${q}`, {
       cache: 'no-store',
       signal: ctl.signal,
     })
@@ -481,7 +521,7 @@ function ShellFrame({
       })
       .catch(() => undefined);
     return () => ctl.abort();
-  }, [onTriage, lastWhere, counts, pushed, setCounts]);
+  }, [onTriage, lastWhere, lastIndustry, counts, pushed, setCounts]);
   const logoEditor = useLogoEditor();
   const [sidebarPreference, setSidebarPreference] = React.useState(sidebar);
   const narrow = useMediaQuery('(max-width: 1279px)');
@@ -503,6 +543,18 @@ function ShellFrame({
   const [starting, setStarting] = React.useState(false);
   const [liveProgress, setLiveProgress] = React.useState<ScoutCardView['progress']>(null);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const paletteWasOpen = React.useRef(false);
+  paletteWasOpen.current = paletteOpen;
+  const [soundOn, setSoundOn] = React.useState(true);
+  useIsoLayoutEffect(() => {
+    setSoundOn(soundEnabled());
+  }, []);
+  const toggleSound = React.useCallback(() => {
+    const on = toggleMuted();
+    setSoundOn(on);
+    // Turning sound on is a click, so the browser will allow audio, and the whistle proves it.
+    if (on) play('shortlist');
+  }, []);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const [resetOpen, setResetOpen] = React.useState(false);
   const [resetPlan, setResetPlan] = React.useState<ResetCounts | null>(null);
@@ -523,16 +575,37 @@ function ShellFrame({
   >({});
   const resetToken = React.useRef(0);
   const [paletteJobs, setPaletteJobs] = React.useState<PaletteJob[]>([]);
+  const [paletteIndustries, setPaletteIndustries] = React.useState<
+    { id: string; companies: number; jobs: number }[]
+  >([]);
+  const industryAliases = React.useMemo(() => industryAliasSet(industries), [industries]);
   const [pendingJob, setPendingJob] = React.useState<{ id: string; token: number } | null>(null);
   const [tuneToken, setTuneToken] = React.useState(0);
   const liveRanking = React.useRef('');
   const scoringNote = React.useRef<string | undefined>(undefined);
   const watchKind = React.useRef<'scout' | 'refresh'>('scout');
   const watched = React.useRef<number | null>(null);
+  /** True only while Run scout / Refresh listings has not yet returned a run id. */
+  const startInFlight = React.useRef(false);
 
   React.useEffect(() => setCard(scout), [scout]);
 
   const running = starting || card?.running === true || watched.current !== null;
+  const scoutLive = React.useMemo<ScoutLive | null>(
+    () =>
+      card
+        ? {
+            lastRunLabel: card.lastRunLabel,
+            boards: card.boards,
+            newLastRun: card.newLastRun,
+            progress: running
+              ? (liveProgress ?? card.progress ?? { done: 0, total: card.boards, found: 0 })
+              : null,
+            running,
+          }
+        : null,
+    [card, running, liveProgress],
+  );
 
   React.useEffect(() => {
     const id = watched.current;
@@ -564,11 +637,13 @@ function ShellFrame({
           const next = await fetchCard();
           if (next) setCard(next);
           if (state.ok === false) {
+            if (watchKind.current === 'scout') play('error');
             toast('Scout failed', {
               description: state.error ?? next?.notices[0]?.text,
               icon: <TriangleAlert className="text-danger" />,
             });
           } else {
+            if (watchKind.current === 'scout') play('scout-done');
             const boards = state.boardsOk ?? state.boards ?? next?.boards ?? 0;
             const found = state.inserted ?? next?.newLastRun ?? 0;
             const closed = state.closed ?? 0;
@@ -592,7 +667,15 @@ function ShellFrame({
       }
       if (running) {
         const next = await fetchCard();
-        if (!stop && next) setCard(next);
+        if (stop || !next) return;
+        setCard(next);
+        // The server says nothing is running, and this click already settled without a run
+        // to watch. Drop the local "starting" flag so a killed server cannot leave the card
+        // on Scouting after the run itself has gone stale.
+        if (!next.running && watched.current === null && !startInFlight.current) {
+          setStarting(false);
+          setLiveProgress(null);
+        }
       }
     };
     void tick();
@@ -609,7 +692,9 @@ function ShellFrame({
         toast('A scout is already running');
         return;
       }
+      if (kind === 'scout') play('scout-start');
       watchKind.current = kind;
+      startInFlight.current = true;
       setStarting(true);
       setCard((c) =>
         c
@@ -617,20 +702,37 @@ function ShellFrame({
           : c,
       );
       const start = kind === 'refresh' ? refreshListings : runScoutNow;
-      void start().then((result) => {
-        if (!result.ok) {
+      void start()
+        .then((result) => {
+          if (!result.ok) {
+            setStarting(false);
+            setLiveProgress(null);
+            setCard((c) => (c ? { ...c, running: false, progress: null } : c));
+            if (kind === 'scout') play('error');
+            toast(kind === 'refresh' ? 'Refresh failed' : 'Scout failed', {
+              description: result.error,
+              icon: <TriangleAlert className="text-danger" />,
+            });
+            return;
+          }
+          scoringNote.current = result.scoringNote;
+          watched.current = result.runId;
+          setStarting(true);
+        })
+        .catch(() => {
+          if (watched.current !== null) return;
           setStarting(false);
+          setLiveProgress(null);
           setCard((c) => (c ? { ...c, running: false, progress: null } : c));
+          if (kind === 'scout') play('error');
           toast(kind === 'refresh' ? 'Refresh failed' : 'Scout failed', {
-            description: result.error,
+            description: 'The server stopped before the scout could start.',
             icon: <TriangleAlert className="text-danger" />,
           });
-          return;
-        }
-        scoringNote.current = result.scoringNote;
-        watched.current = result.runId;
-        setStarting(true);
-      });
+        })
+        .finally(() => {
+          startInFlight.current = false;
+        });
     },
     [running],
   );
@@ -786,7 +888,11 @@ function ShellFrame({
     ],
   );
 
-  const openPalette = React.useCallback(() => setPaletteOpen(true), []);
+  const openPalette = React.useCallback(() => {
+    if (!paletteWasOpen.current) play('palette');
+    paletteWasOpen.current = true;
+    setPaletteOpen(true);
+  }, []);
 
   // ⌘K only toggles the dialog. Fetch whenever it opens, including from the hotkey.
   React.useEffect(() => {
@@ -794,12 +900,32 @@ function ShellFrame({
     const q = liveRanking.current;
     let stop = false;
     void fetch(`/api/palette-jobs${q ? `?${q}` : ''}`, { cache: 'no-store' })
-      .then((res) => (res.ok ? (res.json() as Promise<PaletteJob[]>) : []))
-      .then((jobs) => {
-        if (!stop) setPaletteJobs(Array.isArray(jobs) ? jobs : []);
+      .then((res) =>
+        res.ok
+          ? (res.json() as Promise<
+              | PaletteJob[]
+              | {
+                  jobs: PaletteJob[];
+                  industries: { id: string; companies: number; jobs: number }[];
+                }
+            >)
+          : { jobs: [], industries: [] },
+      )
+      .then((payload) => {
+        if (stop) return;
+        if (Array.isArray(payload)) {
+          setPaletteJobs(payload);
+          setPaletteIndustries([]);
+          return;
+        }
+        setPaletteJobs(Array.isArray(payload.jobs) ? payload.jobs : []);
+        setPaletteIndustries(Array.isArray(payload.industries) ? payload.industries : []);
       })
       .catch(() => {
-        if (!stop) setPaletteJobs([]);
+        if (!stop) {
+          setPaletteJobs([]);
+          setPaletteIndustries([]);
+        }
       });
     return () => {
       stop = true;
@@ -807,15 +933,46 @@ function ShellFrame({
   }, [paletteOpen]);
 
   useHotkeys({
-    'mod+k': () => setPaletteOpen((open) => !open),
+    'mod+k': () => {
+      const next = !paletteWasOpen.current;
+      if (next) play('palette');
+      paletteWasOpen.current = next;
+      setPaletteOpen(next);
+    },
     'mod+b': () => toggleSidebar(),
     '?': () => setShortcutsOpen((open) => !open),
+    m: () => toggleSound(),
   });
 
   const jumpToJob = (job: PaletteJob) => {
     setPendingJob({ id: job.id, token: Date.now() });
     router.push(paletteJobHref(query, job, whereDefault));
   };
+  const openIndustry = (id: string) => {
+    const path = TRIAGE_PATHS.includes(pathname) ? pathname : TRIAGE_PATH.top;
+    const params = new URLSearchParams(query.replace(/^\?/, ''));
+    params.set('industry', id);
+    const qs = params.toString().replaceAll('%2C', ',');
+    router.push(`${path}${qs ? `?${qs}` : ''}`);
+  };
+  const industryCounts = new Map(paletteIndustries.map((row) => [row.id, row]));
+  const industryGroup: PaletteGroup | null =
+    industries.length === 0
+      ? null
+      : {
+          heading: 'Industries',
+          items: industries.map((row) => {
+            const count = industryCounts.get(row.id);
+            return {
+              id: `industry-${row.id}`,
+              label: row.label,
+              match: industryMatchValue(row),
+              hint: `${formatCount(count?.companies ?? 0)} companies · ${formatCount(count?.jobs ?? 0)} jobs`,
+              icon: <Sparkles className="size-4 text-fg-3" />,
+              onSelect: () => openIndustry(row.id),
+            };
+          }),
+        };
 
   const jobGroup: PaletteGroup | null =
     paletteJobs.length === 0
@@ -836,10 +993,17 @@ function ShellFrame({
       heading: 'Go to',
       items: [
         {
+          id: 'go-dash',
+          label: 'Dashboard',
+          keywords: ['home', 'command', 'recon', 'overview'],
+          icon: <SquareTerminal className="size-4 text-fg-3" />,
+          onSelect: () => router.push('/'),
+        },
+        {
           id: 'go-top',
           label: 'Top matches',
           icon: <Sparkles className="size-4 text-fg-3" />,
-          onSelect: () => router.push(`/${query}`),
+          onSelect: () => router.push(`/matches${query}`),
         },
         {
           id: 'go-new',
@@ -908,7 +1072,7 @@ function ShellFrame({
           shortcut: ['T'],
           onSelect: () => {
             setTuneToken((n) => n + 1);
-            router.push(`/${query}`);
+            router.push(`/matches${query}`);
           },
         },
         {
@@ -938,8 +1102,21 @@ function ShellFrame({
           shortcut: ['?'],
           onSelect: () => setShortcutsOpen(true),
         },
+        {
+          id: 'act-sound',
+          label: soundOn ? 'Mute sounds' : 'Unmute sounds',
+          keywords: ['audio', 'mute', 'volume'],
+          icon: soundOn ? (
+            <Volume2 className="size-4 text-fg-3" />
+          ) : (
+            <VolumeX className="size-4 text-fg-3" />
+          ),
+          shortcut: ['M'],
+          onSelect: () => toggleSound(),
+        },
       ],
     },
+    ...(industryGroup ? [industryGroup] : []),
     ...(jobGroup ? [jobGroup] : []),
   ];
   const sections = sectionsFor(shown, query, logoEditor.missing ?? shown?.logos, openReset);
@@ -989,97 +1166,106 @@ function ShellFrame({
 
   return (
     <Ctx.Provider value={ctx}>
-      <MotionConfig reducedMotion="user">
-        <LogoDomainProvider domains={foundLogos}>
-          <TooltipProvider>
-            <div className="flex h-dvh overflow-hidden bg-canvas text-fg">
-              {phone ? null : (
-                <AppSidebar
-                  sections={sections}
-                  activeHref={activeHref}
-                  collapsed={collapsed}
-                  onToggleCollapsed={toggleSidebar}
-                  onSearch={openPalette}
-                  footer={footer(collapsed)}
-                  user={user ?? undefined}
-                  className="max-md:hidden"
-                />
-              )}
-              <main className="relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-card max-md:m-0 max-md:rounded-none max-md:border-0">
-                <LogoLookup
-                  clientId={logos?.clientId ?? null}
-                  names={logos?.names ?? []}
-                  onFound={noteLogo}
-                />
-                <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
-              </main>
-            </div>
-
-            <Dialog open={mobileNav} onOpenChange={setMobileNav}>
-              <DialogContent
-                className="left-0 top-0 h-full w-[280px] max-w-none translate-x-0 rounded-none rounded-r-xl border-y-0 border-l-0 p-0 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] [--chamfer:0px] data-[state=open]:animate-drawer-in"
-                overlayClassName="bg-black/60"
-              >
-                <DialogTitle className="sr-only">Navigation</DialogTitle>
-                <DialogDescription className="sr-only">Views and applications</DialogDescription>
-                {/* biome-ignore lint/a11y/useKeyWithClickEvents: closes the drawer after a link is followed; links handle their own keys */}
-                <div
-                  onClick={(e) => (e.target as HTMLElement).closest('a') && setMobileNav(false)}
-                  className="h-full"
-                >
+      <ScoutLiveCtx.Provider value={scoutLive}>
+        <MotionConfig reducedMotion="user">
+          <LogoDomainProvider domains={foundLogos}>
+            <TooltipProvider>
+              <div className="flex h-dvh overflow-hidden bg-canvas text-fg">
+                {phone ? null : (
                   <AppSidebar
                     sections={sections}
                     activeHref={activeHref}
-                    onSearch={() => {
-                      setMobileNav(false);
-                      openPalette();
-                    }}
-                    footer={footer(false)}
+                    collapsed={collapsed}
+                    onToggleCollapsed={toggleSidebar}
+                    onSearch={openPalette}
+                    footer={footer(collapsed)}
                     user={user ?? undefined}
-                    className="w-full"
+                    soundOn={soundOn}
+                    onToggleSound={toggleSound}
+                    className="max-md:hidden"
                   />
-                </div>
-              </DialogContent>
-            </Dialog>
-            <AppToaster />
-            <CommandPalette
-              open={paletteOpen}
-              onOpenChange={setPaletteOpen}
-              groups={paletteGroups}
-            />
-            <ShortcutsDialog
-              open={shortcutsOpen}
-              onOpenChange={setShortcutsOpen}
-              groups={SHORTCUTS}
-            />
-            <TurnOffBoardDialog
-              target={retire}
-              busy={retireBusy}
-              error={retireError}
-              onOpenChange={(open) => {
-                if (!open) setRetire(null);
-              }}
-              onConfirm={() => void confirmRetire()}
-            />
-            <ResetDialog
-              open={resetOpen}
-              onOpenChange={(open) => {
-                if (open) return;
-                resetToken.current += 1;
-                setResetOpen(false);
-              }}
-              plan={resetPlan}
-              phase={resetPhase}
-              busy={resetBusy}
-              error={resetError}
-              onConfirm={() => void confirmResetDialog()}
-            />
-          </TooltipProvider>
-        </LogoDomainProvider>
-      </MotionConfig>
+                )}
+                <main className="relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-card max-md:m-0 max-md:rounded-none max-md:border-0">
+                  <LogoLookup
+                    clientId={logos?.clientId ?? null}
+                    names={logos?.names ?? []}
+                    onFound={noteLogo}
+                  />
+                  <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
+                </main>
+              </div>
+
+              <Dialog open={mobileNav} onOpenChange={setMobileNav}>
+                <DialogContent
+                  className="left-0 top-0 h-full w-[280px] max-w-none translate-x-0 rounded-none rounded-r-xl border-y-0 border-l-0 p-0 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] [--chamfer:0px] data-[state=open]:animate-drawer-in"
+                  overlayClassName="bg-black/60"
+                >
+                  <DialogTitle className="sr-only">Navigation</DialogTitle>
+                  <DialogDescription className="sr-only">Views and applications</DialogDescription>
+                  {/* biome-ignore lint/a11y/useKeyWithClickEvents: closes the drawer after a link is followed; links handle their own keys */}
+                  <div
+                    onClick={(e) => (e.target as HTMLElement).closest('a') && setMobileNav(false)}
+                    className="h-full"
+                  >
+                    <AppSidebar
+                      sections={sections}
+                      activeHref={activeHref}
+                      onSearch={() => {
+                        setMobileNav(false);
+                        openPalette();
+                      }}
+                      footer={footer(false)}
+                      user={user ?? undefined}
+                      soundOn={soundOn}
+                      onToggleSound={toggleSound}
+                      className="w-full"
+                    />
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <AppToaster />
+              <CommandPalette
+                open={paletteOpen}
+                onOpenChange={setPaletteOpen}
+                groups={paletteGroups}
+                filter={(value, search) => paletteScore(value, search, industryAliases)}
+              />
+              <ShortcutsDialog
+                open={shortcutsOpen}
+                onOpenChange={setShortcutsOpen}
+                groups={SHORTCUTS}
+              />
+              <TurnOffBoardDialog
+                target={retire}
+                busy={retireBusy}
+                error={retireError}
+                onOpenChange={(open) => {
+                  if (!open) setRetire(null);
+                }}
+                onConfirm={() => void confirmRetire()}
+              />
+              <ResetDialog
+                open={resetOpen}
+                onOpenChange={(open) => {
+                  if (open) return;
+                  resetToken.current += 1;
+                  setResetOpen(false);
+                }}
+                plan={resetPlan}
+                phase={resetPhase}
+                busy={resetBusy}
+                error={resetError}
+                onConfirm={() => void confirmResetDialog()}
+              />
+            </TooltipProvider>
+          </LogoDomainProvider>
+        </MotionConfig>
+      </ScoutLiveCtx.Provider>
     </Ctx.Provider>
   );
 }
+
+const useIsoLayoutEffect = typeof window === 'undefined' ? React.useEffect : React.useLayoutEffect;
 
 const focusRing =
   'outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-uv-hi';

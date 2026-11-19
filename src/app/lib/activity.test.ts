@@ -91,6 +91,63 @@ describe('activityGroups', () => {
     expect(s).toMatchObject({ title: 'Opened the application in Chrome' });
   });
 
+  it('never says it filled the application when it filled nothing (J29 fix)', () => {
+    const s = eventSummary(ev('fill', at(26, 9), { filled: 0, unfilled: 1 }), true);
+    expect([s?.title, s?.detail]).toEqual([
+      'Opened the application in Chrome',
+      'Nothing filled, 1 field left blank',
+    ]);
+  });
+
+  it('titles a job-board stop, a page with no form, and the employer link (J29)', () => {
+    const items = [
+      ev('fill_skipped', at(26, 9), { host: 'jobleads.com', options: 3, direct: 1 }),
+      ev('fill', at(26, 10), { filled: 0, unfilled: 0, no_form: true }),
+      ev('apply_link', at(26, 11), { host: 'jobs.ashbyhq.com', from: 'option' }),
+      ev('apply_link', at(26, 12), { host: 'careers.fabrikam.example', from: 'pasted' }),
+      ev('apply_link', at(26, 13), { host: 'careers.fabrikam.example', from: 'cleared' }),
+    ].map((e) => eventSummary(e, true));
+    expect(items.map((s) => [s?.title, s?.detail])).toEqual([
+      [
+        'Nothing to fill on jobleads.com',
+        "A job board, so Chrome wasn't opened. 3 links from the search stored",
+      ],
+      ['Opened a page with no application form', 'Nothing was filled'],
+      ['Set the employer link to jobs.ashbyhq.com', "From the job's apply links"],
+      ['Set the employer link to careers.fabrikam.example', 'Pasted'],
+      ['Cleared the employer link', undefined],
+    ]);
+  });
+
+  it('says when the employer was read from the posting, with its words, or not found (J29 fix)', () => {
+    const named = eventSummary(
+      ev('employer_read', at(26, 9), {
+        from: 'Remote',
+        to: 'Oowlish',
+        quote: "Oowlish, one of Latin America's rapidly expanding software development companies",
+        content_hash: 'h',
+      }),
+      true,
+    );
+    const unnamed = eventSummary(
+      ev('employer_read', at(26, 9), {
+        from: 'Confidential',
+        to: null,
+        reason: 'x',
+        content_hash: 'h',
+      }),
+      true,
+    );
+    expect([named?.title, named?.detail]).toEqual([
+      'Read the employer from the posting: Oowlish',
+      `Listed as "Remote". "Oowlish, one of Latin America's rapidly expanding software development companies"`,
+    ]);
+    expect([unnamed?.title, unnamed?.detail]).toEqual([
+      'The posting names no employer',
+      'Listed as "Confidential"',
+    ]);
+  });
+
   it('gives a job page one line per event, in the order given, hiding bookkeeping', () => {
     const iso = at(26, 9);
     const entries = eventEntries([

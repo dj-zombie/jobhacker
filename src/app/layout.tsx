@@ -39,6 +39,15 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             user={config.ok ? config.user : null}
             logos={getLogoLookup(config)}
             whereDefault={config.ok ? whereDefault(config.criteria) : []}
+            industries={
+              config.ok
+                ? (config.criteria.industries ?? []).map((industry) => ({
+                    id: industry.id,
+                    label: industry.label,
+                    aliases: [...industry.aliases],
+                  }))
+                : []
+            }
             sidebar={sidebar}
           >
             {children}

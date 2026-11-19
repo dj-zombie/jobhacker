@@ -90,6 +90,7 @@ describe('rankScore', () => {
       baseScore: 71,
       score: 54,
       cap: { level: 0, dimensions: ['logistics_fit'], maxScore: 54 },
+      target: null,
     });
     expect(verdictFor(rankScore(great, DEFAULT, BANDS), BANDS)).toBe('no');
   });
@@ -108,7 +109,35 @@ describe('rankScore', () => {
 
   it('does not cap an unknown critical dimension', () => {
     const result = computeRank(dims({ logistics_fit: null }, 5), DEFAULT, BANDS);
-    expect(result).toEqual({ baseScore: 100, score: 100, cap: null });
+    expect(result).toEqual({ baseScore: 100, score: 100, cap: null, target: null });
+  });
+
+  it('lifts a listed company by the gap between the bands, and stops at 100', () => {
+    const maybe = computeRank(dims({}, 3), EVEN, BANDS, { target: true });
+    expect(maybe).toMatchObject({ baseScore: 60, score: 80, cap: null, target: { points: 20 } });
+    expect(verdictFor(maybe.score, BANDS)).toBe('strong');
+    const already = computeRank(dims({}, 5), DEFAULT, BANDS, { target: true });
+    expect(already.score).toBe(100);
+    expect(already.target).toEqual({ points: 20 });
+  });
+
+  it('does not let a listed company through a critical cap', () => {
+    const poor = computeRank(dims({ logistics_fit: 0 }, 5), DEFAULT, BANDS, { target: true });
+    expect(poor.baseScore).toBe(71);
+    expect(poor.score).toBe(54);
+    expect(verdictFor(poor.score, BANDS)).toBe('no');
+    const weakRole = computeRank(dims({ role_fit: 1 }, 5), DEFAULT, BANDS, { target: true });
+    expect(weakRole.score).toBe(74);
+    expect(verdictFor(weakRole.score, BANDS)).toBe('maybe');
+  });
+
+  it('leaves an unscored job unscored', () => {
+    expect(computeRank(dims({}, null), DEFAULT, BANDS, { target: true })).toEqual({
+      baseScore: null,
+      score: null,
+      cap: null,
+      target: null,
+    });
   });
 });
 
@@ -171,5 +200,16 @@ describe('rankJobs', () => {
     const [top] = rankJobs(rows, DEFAULT, BANDS);
     expect(top).toMatchObject({ jobId: 3, score: 100, verdict: 'strong' });
     expect(top?.dimensions).toBe(rows[2]?.dimensions);
+  });
+
+  it('ranks a listed company above an equal score', () => {
+    const tied = [
+      { jobId: 1, dimensions: dims({}, 3), target: false },
+      { jobId: 2, dimensions: dims({}, 3), target: true },
+    ];
+    const ranked = rankJobs(tied, EVEN, BANDS);
+    expect(ranked.map((row) => row.jobId)).toEqual([2, 1]);
+    expect(ranked[0]).toMatchObject({ score: 80, verdict: 'strong' });
+    expect(ranked[1]).toMatchObject({ score: 60, verdict: 'maybe' });
   });
 });

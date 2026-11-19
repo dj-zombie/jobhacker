@@ -6,6 +6,7 @@ import {
   EmptyState,
   FilterChip,
   Hint,
+  IndustryFilter,
   JobDetail,
   type JobDetailData,
   JobList,
@@ -58,7 +59,9 @@ import {
   useRunScout,
   useTriageStore,
 } from '../../components/app-shell.js';
+import { companySiteHref } from '../../core/brand/site-icon.js';
 import type { Bands, Weights } from '../../core/config/schemas.js';
+import { inIndustry } from '../../core/pipeline/industry-match.js';
 import type { ScoreRunState } from '../../core/pipeline/score-run.js';
 import type { JobStatus } from '../../core/pipeline/triage-view.js';
 import {
@@ -68,21 +71,26 @@ import {
   newSince,
 } from '../../core/pipeline/triage-view.js';
 import {
+  type ScoreNextChoice,
   type TriageWriteResult,
   prepJob,
   saveRankingAction,
   startScoreJob,
   startScoreNext,
+  stopScoreRun,
   triageJobAction,
   undoTriageAction,
 } from '../lib/actions.js';
+import { addCapped, prefetchIds } from '../lib/detail-cache.js';
 import { encodeWeights, sameWeights } from '../lib/format.js';
+import { play } from '../lib/sfx.js';
 import {
   SEEN_HOURS,
   SEEN_LABEL,
   SEEN_VALUES,
   type Seen,
   TRIAGE_PATH,
+  parseIndustryParam,
   parseSeen,
   parseWhereParam,
   triageQuery,
@@ -99,6 +107,7 @@ import {
   toSummary,
   weightsFromKit,
 } from '../lib/triage.js';
+import { CompanyIndustry } from './CompanyIndustry.js';
 import { useLogoEditor } from './LogoEditor';
 import { useLogoDomains } from './LogoLookup';
 import { UnscoredHero } from './UnscoredHero.js';
@@ -125,10 +134,23 @@ const ACTION_PAST = { shortlist: 'Shortlisted', skip: 'Skipped', archive: 'Archi
 const LEAVE_MS = 170;
 const POLL_MS = 1000;
 const COUNTS_AFTER_MS = 400;
+/** A missed job's detail loads this long after the last move, so holding J doesn't fetch every row. */
+const DETAIL_AFTER_MS = 60;
+/**
+ * Once the selected job is in and the selection has rested this long, the jobs this far ahead and
+ * behind load, so J and K find them ready.
+ */
+const PREFETCH_AFTER_MS = 150;
+const PREFETCH_AHEAD = 3;
+const PREFETCH_BEHIND = 1;
+/** Loaded details kept, about 2 MB. The oldest go first; the selected job's never does. */
+const DETAIL_CACHE_MAX = 300;
 
 function byRank(a: JobSummary, b: JobSummary): number {
   const s = (b.score ?? -1) - (a.score ?? -1);
   if (s) return s;
+  const t = Number(b.target === true) - Number(a.target === true);
+  if (t) return t;
   const p = (b.prescore ?? 0) - (a.prescore ?? 0);
   if (p) return p;
   return Number(a.id) - Number(b.id);
@@ -152,6 +174,20 @@ function saveDensity(density: Density): void {
 
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
+}
+
+/** Waiting rows on this list that sit in `ids`. A job in two of them counts once. */
+function countInPlaces(
+  rows: readonly { areas: readonly string[] }[],
+  ids: readonly string[],
+): number {
+  if (ids.length === 0) return 0;
+  const want = new Set(ids);
+  let n = 0;
+  for (const row of rows) {
+    if (row.areas.some((area) => want.has(area))) n += 1;
+  }
+  return n;
 }
 
 /** "Portland, Phoenix or remote", as the reference's copy reads. */
@@ -202,20 +238,33 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
     [whereRaw, known, data.whereDefault],
   );
   const seen = parseSeen(params.get('seen'));
+  const industryIds = React.useMemo(() => data.industries.map((row) => row.id), [data.industries]);
+  const industry = parseIndustryParam(params.get('industry'), industryIds);
   const segment: Segment =
     view === 'top' ? (SEGMENTS.find((s) => s === params.get('segment')) ?? 'matches') : 'matches';
 
-  /** Where, Seen and the segment live in the URL; replaceState keeps the server out of it. */
-  const setUrl = (next: { where?: string[]; seen?: Seen; segment?: Segment }) => {
+  /** Where, Seen, industry and the segment live in the URL; replaceState keeps the server out of it. */
+  const setUrl = (next: {
+    where?: string[];
+    seen?: Seen;
+    segment?: Segment;
+    industry?: string | null;
+  }) => {
     const q = new URLSearchParams(
-      triageQuery(next.where ?? where, next.seen ?? seen, data.whereDefault, known).slice(1),
+      triageQuery(
+        next.where ?? where,
+        next.seen ?? seen,
+        data.whereDefault,
+        known,
+        next.industry === undefined ? industry : next.industry,
+      ).slice(1),
     );
     const seg = next.segment ?? segment;
     if (view === 'top' && seg !== 'matches') q.set('segment', seg);
     const s = q.toString().replaceAll('%2C', ',');
     window.history.replaceState(null, '', `${pathname}${s ? `?${s}` : ''}`);
   };
-  const viewQuery = triageQuery(where, seen, data.whereDefault, known);
+  const viewQuery = triageQuery(where, seen, data.whereDefault, known, industry);
 
   // Live weights and bands (J6). The saved pair comes from the server; dragging never rescores.
   const savedRanking = data.ranking;
@@ -259,6 +308,30 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
 
   // Rows replaced after Score this job, until the server's rows catch up.
   const [patches, setPatches] = React.useState<ReadonlyMap<number, TriageRowData>>(new Map());
+  const setCompanyIndustryLocal = React.useCallback(
+    (companyId: number, nextId: string | null) => {
+      setPatches((prev) => {
+        const next = new Map(prev);
+        for (const row of data.rows) {
+          const current = next.get(row.id) ?? row;
+          if (current.companyId !== companyId) continue;
+          const same = nextId !== null && current.industryId === nextId;
+          next.set(row.id, {
+            ...current,
+            industryId: nextId,
+            industryStatus: nextId === null ? 'cleared' : 'confirmed',
+            industryReason: same
+              ? current.industryReason
+              : nextId === null
+                ? 'Cleared by you.'
+                : 'Set by you.',
+          });
+        }
+        return next;
+      });
+    },
+    [data.rows],
+  );
   const [details, setDetails] = React.useState<ReadonlyMap<number, TriageDetailData>>(new Map());
   // biome-ignore lint/correctness/useExhaustiveDependencies: new rows from the server replace local patches and cached details
   React.useEffect(() => {
@@ -303,33 +376,46 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
     [view, segment],
   );
 
-  const { placeCounts, base, items, hidden } = React.useMemo(() => {
+  const { placeCounts, industryCounts, base, items, hidden } = React.useMemo(() => {
     const hours = SEEN_HOURS[seen];
     const seenOk = (x: { s: JobSummary }) => hours === null || x.s.ageHours < hours;
     const seenRows = summaries.filter(seenOk);
     const counts: Record<string, number> = {};
+    const indCounts: Record<string, number> = {};
     let elsewhere = 0;
     for (const { row, s } of seenRows) {
       if (!segOk(s)) continue;
       if (!inWhere(row.areas, where)) elsewhere += 1;
+      else if (row.industryId && inIndustry(row, row.industryId)) {
+        indCounts[row.industryId] = (indCounts[row.industryId] ?? 0) + 1;
+      }
       for (const a of row.areas) counts[a] = (counts[a] ?? 0) + 1;
     }
-    const inPlace = seenRows.filter((x) => inWhere(x.row.areas, where));
+    const inPlace = seenRows.filter(
+      (x) => inWhere(x.row.areas, where) && inIndustry(x.row, industry),
+    );
     let older = 0;
+    let other = 0;
     for (const x of summaries) {
-      if (!seenOk(x) && segOk(x.s) && inWhere(x.row.areas, where)) older += 1;
+      if (!segOk(x.s) || !inWhere(x.row.areas, where)) continue;
+      if (!inIndustry(x.row, industry)) {
+        if (seenOk(x)) other += 1;
+        continue;
+      }
+      if (!seenOk(x)) older += 1;
     }
     return {
       placeCounts: counts,
+      industryCounts: indCounts,
       base: inPlace,
       items: inPlace
         .filter((x) => segOk(x.s))
         .map((x) => x.s)
         .sort(byRank),
-      // What an empty list is hiding: jobs outside Where, and jobs older than Seen.
-      hidden: { elsewhere, older },
+      // What an empty list is hiding: jobs outside Where, in another industry, or older than Seen.
+      hidden: { elsewhere, older, other },
     };
-  }, [summaries, seen, where, segOk]);
+  }, [summaries, seen, where, industry, segOk]);
 
   const segCounts = React.useMemo(() => {
     const c = { strong: 0, maybe: 0, no: 0 };
@@ -340,9 +426,11 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
   // The sidebar count for this view comes from these rows, so it moves on the key press. The
   // other views' counts are refetched within this Where.
   const ownCount = React.useMemo(() => {
-    const inPlace = summaries.filter((x) => inWhere(x.row.areas, where));
+    const inPlace = summaries.filter(
+      (x) => inWhere(x.row.areas, where) && inIndustry(x.row, industry),
+    );
     return view === 'top' ? inPlace.filter((x) => x.s.band !== 'no').length : inPlace.length;
-  }, [summaries, where, view]);
+  }, [summaries, where, industry, view]);
   const ownCountRef = React.useRef(ownCount);
   ownCountRef.current = ownCount;
   const { setCounts } = store;
@@ -361,6 +449,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
       countsTimer.current = window.setTimeout(async () => {
         const q = new URLSearchParams();
         q.set('where', where.length ? where.join(',') : 'anywhere');
+        if (industry) q.set('industry', industry);
         const live = rankingRef.current;
         const base = ackedRef.current;
         const moved =
@@ -375,7 +464,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
         if (c) setCounts({ ...c, [meta.count]: ownCountRef.current });
       }, delay);
     },
-    [where, setCounts, meta.count],
+    [where, industry, setCounts, meta.count],
   );
   React.useEffect(() => () => window.clearTimeout(countsTimer.current), []);
 
@@ -385,9 +474,9 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
   React.useEffect(() => {
     const first = !mounted.current;
     mounted.current = true;
-    if (first && sameSet(where, data.whereDefault)) return;
+    if (first && sameSet(where, data.whereDefault) && !industry) return;
     refreshCounts(0);
-  }, [whereKey, data.rows]);
+  }, [whereKey, industry, data.rows]);
 
   const weightsKey = `${encodeWeights(weights)}:${bands.strong}:${bands.maybe}`;
   // biome-ignore lint/correctness/useExhaustiveDependencies: the sidebar's match count follows a weight while it moves
@@ -427,18 +516,40 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
     setTuneOpen(true);
   }, [palette.tuneToken]);
 
+  // The selected job's detail, then its neighbours'. A move cancels both, so a burst of J presses
+  // loads nothing until it stops. The neighbours land in one update, so they cost one render.
+  const itemIds = React.useMemo(() => items.map((i) => i.id), [items]);
   React.useEffect(() => {
-    if (selNum === null || details.has(selNum)) return;
+    if (selNum === null) return;
+    const missing = !details.has(selNum);
+    const ids = missing
+      ? [String(selNum)]
+      : prefetchIds(
+          itemIds,
+          index,
+          (id) => details.has(Number(id)),
+          PREFETCH_AHEAD,
+          PREFETCH_BEHIND,
+        );
+    if (!ids.length) return;
     const ctrl = new AbortController();
-    const t = window.setTimeout(async () => {
-      const d = await fetchJson<TriageDetailData>(`/api/job/${selNum}`, ctrl.signal);
-      if (d) setDetails((prev) => new Map(prev).set(selNum, d));
-    }, 60);
+    const t = window.setTimeout(
+      async () => {
+        const got = await Promise.all(
+          ids.map((id) => fetchJson<TriageDetailData>(`/api/job/${id}`, ctrl.signal)),
+        );
+        if (ctrl.signal.aborted) return;
+        const loaded: [number, TriageDetailData][] = [];
+        for (const d of got) if (d) loaded.push([d.row.id, d]);
+        if (loaded.length) setDetails((prev) => addCapped(prev, loaded, DETAIL_CACHE_MAX, selNum));
+      },
+      missing ? DETAIL_AFTER_MS : PREFETCH_AFTER_MS,
+    );
     return () => {
       window.clearTimeout(t);
       ctrl.abort();
     };
-  }, [selNum, details]);
+  }, [selNum, details, itemIds, index]);
 
   const loaded = selNum !== null ? details.get(selNum) : undefined;
   const detail: JobDetailData | null = React.useMemo(() => {
@@ -472,6 +583,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
       employment: '…',
       postedLabel: '…',
       confirmedLabel: '…',
+      website: companySiteHref(selRow.domain),
     };
   }, [selRow, loaded, ranking, places, data.nowMs, data.logoClientId, logoEdits.edits]);
 
@@ -498,6 +610,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
           refresh(COUNTS_AFTER_MS);
         } else {
           s.setStatus(jobId, revertTo);
+          play('error');
           toast("Couldn't save that", {
             description: res.error,
             icon: <TriangleAlert className="text-danger" />,
@@ -507,6 +620,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
   };
 
   const undo = (jobId: number, label: string) => {
+    play('undo');
     setHistory((h) => {
       const i = h.lastIndexOf(jobId);
       return i < 0 ? h : [...h.slice(0, i), ...h.slice(i + 1)];
@@ -522,6 +636,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
           setSelected(String(jobId));
           toast('Restored', { description: label });
         } else {
+          play('error');
           toast("Couldn't undo", {
             description: res.error,
             icon: <TriangleAlert className="text-danger" />,
@@ -558,6 +673,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
             : `/applications/${res.applicationId}`,
         );
       } else {
+        play('error');
         toast("Couldn't prepare the application", {
           id,
           description: res.error,
@@ -582,6 +698,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
       return;
     }
     if (leavingId) return;
+    play(action);
     const at = items.findIndex((i) => i.id === id);
     const next = items[at + 1] ?? items[at - 1] ?? null;
     const from = row.status;
@@ -605,6 +722,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
 
   const [run, setRun] = React.useState<ScoreRunState | null>(data.liveRun);
   const [starting, setStarting] = React.useState(false);
+  const [stopping, setStopping] = React.useState(false);
   const runId = run?.running ? run.runId : null;
   React.useEffect(() => {
     if (runId === null) return;
@@ -619,6 +737,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
   React.useEffect(() => {
     if (!run || run.running || finishedRef.current === run.runId) return;
     finishedRef.current = run.runId;
+    setStopping(false);
     if (data.liveRun?.runId !== run.runId && !run.jobIds && run.progress.total === 0 && run.ok) {
       toast('Nothing to score', { description: 'Every job past the gates has a current score.' });
       return;
@@ -630,13 +749,15 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
         setPatches((prev) => new Map(prev).set(jobId, d.row));
         setDetails((prev) => new Map(prev).set(jobId, d));
         live.current.refreshCounts(0);
-        const { score, band } = scoreOf(d.row.dims, rankingRef.current);
+        const { score, band } = scoreOf(d.row.dims, rankingRef.current, d.row.targetName !== null);
         if (score !== null && band) {
+          play('score-done');
           toast(`Scored ${score}, ${BAND_LABEL[band].toLowerCase()}`, {
             description: `${d.row.title} at ${d.row.company}. 1 model call.`,
             icon: <Sparkles className="text-strong" />,
           });
         } else {
+          play('error');
           toast("Couldn't score this job", {
             description: run.error ?? 'The model call failed; it stays in Unscored.',
             icon: <TriangleAlert className="text-danger" />,
@@ -645,7 +766,14 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
       });
       return;
     }
-    if (run.abandoned || run.ok === false) {
+    if (run.stop && run.ok !== false && !run.abandoned) {
+      if (run.progress.done > 0) play('score-done');
+      toast('Scoring stopped', {
+        description: `${formatCount(run.progress.done)} of ${formatCount(run.progress.total)} were scored.`,
+        icon: <Sparkles className="text-fg-3" />,
+      });
+    } else if (run.abandoned || run.ok === false) {
+      play('error');
       toast('Scoring stopped', {
         description:
           run.error ?? `${run.progress.done} of ${run.progress.total} were scored first.`,
@@ -653,6 +781,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
       });
     } else {
       const { done, found } = run.progress;
+      if (done > 0) play('score-done');
       toast(`Scored ${formatCount(done)} ${done === 1 ? 'job' : 'jobs'}`, {
         description:
           found === 0
@@ -671,6 +800,8 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
   const startRun = async (
     start: () => ReturnType<typeof startScoreNext>,
     jobIds: number[] | null,
+    onlyFirst = false,
+    limit: number | null = null,
   ) => {
     if (run?.running) {
       toast('A score run is going', { description: 'Wait for it to finish, then try again.' });
@@ -685,6 +816,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
         }),
       );
       if (!res.ok) {
+        play('error');
         toast("Couldn't start scoring", {
           description: res.error,
           icon: <TriangleAlert className="text-danger" />,
@@ -700,14 +832,41 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
         progress: { done: 0, total: jobIds ? 1 : 0, found: 0 },
         first: where,
         jobIds,
+        industry,
         beatAt: null,
+        stop: false,
+        concurrency: 6,
+        onlyFirst,
+        limit,
       });
     } finally {
       setStarting(false);
     }
   };
-  const scoreNext = () => startRun(() => startScoreNext(where), null);
-  const scoreOne = (jobId: number) => startRun(() => startScoreJob(jobId), [jobId]);
+  const scoreNext = (choice?: ScoreNextChoice) => {
+    setStopping(false);
+    startRun(
+      () => startScoreNext(where, industry, choice),
+      null,
+      choice?.onlyFirst === true,
+      choice?.limit ?? null,
+    );
+  };
+  const scoreOne = (jobId: number) => startRun(() => startScoreJob(jobId), [jobId], false, null);
+  const stopRun = () => {
+    if (!run?.running) return;
+    setStopping(true);
+    void stopScoreRun(run.runId).then((res) => {
+      if (!res.ok) {
+        setStopping(false);
+        play('error');
+        toast("Couldn't stop scoring", {
+          description: res.error,
+          icon: <TriangleAlert className="text-danger" />,
+        });
+      }
+    });
+  };
 
   const changeWhere = (next: string[]) => setUrl({ where: next });
   const changeSegment = (next: Segment) => setUrl({ segment: next });
@@ -774,6 +933,17 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
         action={
           <Button size="sm" variant="secondary" onClick={() => changeWhere([])}>
             Look anywhere
+          </Button>
+        }
+      />
+    ) : industry && hidden.other > 0 ? (
+      <EmptyState
+        icon={meta.icon}
+        title={`No ${noun(2)} in ${data.industries.find((row) => row.id === industry)?.label ?? 'this industry'}`}
+        body={`${formatCount(hidden.other)} ${noun(hidden.other)} ${are(hidden.other)} in another industry, or none. Show every industry to see ${hidden.other === 1 ? 'it' : 'them'}.`}
+        action={
+          <Button size="sm" variant="secondary" onClick={() => setUrl({ industry: null })}>
+            All industries
           </Button>
         }
       />
@@ -855,6 +1025,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
     void saveRankingAction(weights, bands)
       .then((res) => {
         if (!res.ok) {
+          play('error');
           toast("Couldn't save ranking", {
             description: res.error,
             icon: <TriangleAlert className="text-danger" />,
@@ -894,6 +1065,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
   const detailEl = detail ? (
     <JobDetail
       job={detail}
+      loading={!loaded}
       onAction={(a) => act(detail.id, a)}
       onTune={() => setTuneOpen(true)}
       onEditLogo={() => logoEdits.openPicker(detail.company)}
@@ -904,6 +1076,18 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
         index: index + 1,
         total: items.length,
       }}
+      industry={
+        selRow && data.industries.length > 0 ? (
+          <CompanyIndustry
+            companyId={selRow.companyId}
+            industryId={selRow.industryId}
+            status={selRow.industryStatus}
+            reason={selRow.industryReason}
+            options={data.industries}
+            onOptimistic={setCompanyIndustryLocal}
+          />
+        ) : null
+      }
       primary={
         view === 'shortlist'
           ? {
@@ -960,7 +1144,7 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
         kicker="Triage"
         title={meta.title}
         art="/art/deck-skull.webp"
-        glitchKey={`${segment}|${where.join(',')}`}
+        glitchKey={`${segment}|${where.join(',')}|${industry ?? ''}`}
         count={view === 'top' ? undefined : formatCount(items.length)}
         leading={<MobileNavButton />}
         actions={
@@ -976,6 +1160,19 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
               onChange={changeWhere}
               options={data.places.map((p) => ({ ...p, count: placeCounts[p.id] ?? 0 }))}
             />
+            {data.industries.length > 0 ? (
+              <>
+                <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-2 max-md:hidden" />
+                <IndustryFilter
+                  value={industry}
+                  onChange={(id) => setUrl({ industry: id })}
+                  options={data.industries.map((row) => ({
+                    ...row,
+                    count: industryCounts[row.id] ?? 0,
+                  }))}
+                />
+              </>
+            ) : null}
             <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-2 max-md:hidden" />
             <FilterChip<Seen>
               label="Seen"
@@ -1058,10 +1255,17 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
       {view === 'unscored' && data.scoring ? (
         <UnscoredHero
           summary={data.scoring}
+          pace={data.pace}
           run={batch}
           firstLabel={placesText(firstIds, places)}
+          placesWaiting={countInPlaces(data.rows, firstIds)}
+          industryLabel={
+            industry ? (data.industries.find((row) => row.id === industry)?.label ?? null) : null
+          }
           starting={starting}
-          onScore={() => void scoreNext()}
+          stopping={stopping}
+          onScore={(choice) => void scoreNext(choice)}
+          onStop={stopRun}
         />
       ) : null}
 
@@ -1073,7 +1277,9 @@ export function TriageView({ view, data }: { view: View; data: TriagePageData })
           className={cn(
             'min-h-0',
             'overflow-x-hidden',
-            isMobile ? 'w-full' : 'w-[44%] min-w-[340px] max-w-[600px] border-r border-line',
+            isMobile
+              ? 'w-full'
+              : 'w-[44%] min-w-[340px] max-w-[440px] shrink-0 border-r border-line',
           )}
         >
           <JobList

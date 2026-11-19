@@ -6,7 +6,8 @@
  *
  * Opens /unscored?where=anywhere, counts [role=option], and scrolls the list for 2 seconds. Then it
  * sweeps the pointer across 30 row boundaries in about 2 seconds, and presses J 200 times with the
- * pointer resting on the list.
+ * pointer resting on the list. Comfortable rows wrap to their own heights (D171), so the sweep
+ * moves to the middle of each visible row's measured box.
  */
 import { chromium } from 'playwright-core';
 import { resolveChrome } from '../../src/core/apply/browser.js';
@@ -84,20 +85,29 @@ await page.evaluate(`(() => {
 })()`);
 await page.waitForTimeout(400);
 const box = await page.locator('[role="listbox"]').boundingBox();
-const rowBox = await page.locator('[role="option"]').first().boundingBox();
+const rows = (await page.evaluate(`(() => {
+  const list = document.querySelector('[role="listbox"]');
+  if (!list) return [];
+  const lb = list.getBoundingClientRect();
+  return [...document.querySelectorAll('[role="option"]')]
+    .map((o) => o.getBoundingClientRect())
+    .filter((r) => r.top >= lb.top && r.bottom <= lb.bottom)
+    .sort((a, b) => a.top - b.top)
+    .map((r) => ({ top: r.top, height: r.height }));
+})()`)) as { top: number; height: number }[];
+const rowHeights = [...new Set(rows.map((r) => Math.round(r.height)))].sort((a, b) => a - b);
 let hover: Awaited<ReturnType<typeof recordFrames>> | null = null;
 let keyMs: number | null = null;
-if (box && rowBox) {
-  const rowH = rowBox.height;
+const first = rows[0];
+if (box && first) {
   const x = box.x + box.width * 0.4;
-  const top = rowBox.y;
-  const visible = Math.max(1, Math.floor((box.y + box.height - top) / rowH) - 1);
+  const visible = rows.length;
   const sweeps = Math.min(30, visible * 2);
-  await page.mouse.move(x, top + 4);
+  await page.mouse.move(x, first.top + 4);
   const hoverRec = recordFrames(2200);
   for (let i = 0; i < sweeps; i++) {
-    const idx = i < visible ? i : 2 * visible - i - 1;
-    await page.mouse.move(x, top + idx * rowH + rowH / 2, { steps: 4 });
+    const row = rows[i < visible ? i : 2 * visible - i - 1] ?? first;
+    await page.mouse.move(x, row.top + row.height / 2, { steps: 4 });
     await page.waitForTimeout(2000 / sweeps - 8);
   }
   hover = await hoverRec;
@@ -109,7 +119,11 @@ if (box && rowBox) {
 const selected = await page.locator('[role="option"][aria-selected="true"]').count();
 
 console.log(
-  JSON.stringify({ loadMs, label, atRest, frames, hover, keyMs, selected, errors }, null, 2),
+  JSON.stringify(
+    { loadMs, label, atRest, frames, rowHeights, hover, keyMs, selected, errors },
+    null,
+    2,
+  ),
 );
 await browser.close();
 if (

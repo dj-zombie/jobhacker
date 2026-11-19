@@ -17,6 +17,7 @@ import type { LogoCompany } from '../../core/brand/logo-set.js';
 import { LOGO_TILE_PX } from '../../core/brand/logo-url.js';
 import { companyLogoSrc } from '../../core/brand/site-icon.js';
 import { setCompanyLogo } from '../lib/actions.js';
+import { play } from '../lib/sfx.js';
 import { useLogoEditor } from './LogoEditor.js';
 
 type Segment = 'needs' | 'confirmed' | 'all';
@@ -89,6 +90,7 @@ export function CompanyLogos({ rows, clientId }: { rows: LogoCompany[]; clientId
   const choose = async (row: LogoCompany, kind: 'confirm' | 'none') => {
     const result = await setCompanyLogo(row.name, { kind });
     if (!result.ok) {
+      play('error');
       toast("Couldn't save that logo", { description: result.error });
       return;
     }

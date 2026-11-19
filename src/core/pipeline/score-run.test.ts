@@ -15,8 +15,12 @@ import { nullLogger } from '../util/logger.js';
 import {
   ScoreBusyError,
   finishWithProgress,
+  formatScoreDuration,
+  formatScorePlan,
   liveScoringRun,
+  requestScoreStop,
   runScoreBatch,
+  scorePace,
   scoreRunState,
   startScoreRun,
   trackScoreRun,
@@ -75,7 +79,8 @@ describe('score batches', () => {
     });
     await runScoreBatch(id, deps(db, clock, llm));
 
-    expect(seen).toEqual([0, 1]);
+    // Both calls start before either finishes, so each one still sees 0 done.
+    expect(seen).toEqual([0, 0]);
     const done = scoreRunState(db, clock, id);
     expect(done).toMatchObject({
       running: false,
@@ -136,7 +141,7 @@ describe('score batches', () => {
     expect(scoreRunState(db, later, 999)).toBeUndefined();
   });
 
-  it('goes by the last progress for a score run, and by the start for a scout', () => {
+  it('goes by the last progress for a score run, and by the heartbeat for a scout', () => {
     const { db } = setup([]);
     const at = (iso: string) => fixedClock(iso);
     const id = startScoreRun(db, at('2026-10-25T08:00:00.000Z'), { first: [] });
@@ -154,7 +159,78 @@ describe('score batches', () => {
     expect(liveScoringRun(db, at('2026-10-25T12:16:00.000Z'))).toBeUndefined();
 
     const scout = runsRepo(db, at('2026-10-25T12:00:00.000Z')).start('scout');
+    expect(liveScoringRun(db, at('2026-10-25T14:00:00.000Z'))).toBeUndefined();
+    runsRepo(db, at('2026-10-25T13:58:00.000Z')).progress(scout, {
+      progress: { done: 13, total: 532, found: 1, unit: 'Board' },
+      beatAt: '2026-10-25T13:58:00.000Z',
+    });
     expect(liveScoringRun(db, at('2026-10-25T14:00:00.000Z'))?.id).toBe(scout);
+    expect(liveScoringRun(db, at('2026-10-25T14:04:00.000Z'))).toBeUndefined();
+  });
+
+  it('scores past the config cap when the run asked for a higher limit', async () => {
+    const { db, clock } = setup([
+      'Senior Frontend Engineer',
+      'Staff Frontend Engineer',
+      'Data Analyst',
+    ]);
+    const llm = new FakeLlm({ responder: () => scoreOutput() });
+    const id = startScoreRun(db, clock, { first: [], limit: 3 });
+    await runScoreBatch(id, { ...deps(db, clock, llm), criteria: testCriteria({ cap: 1 }) });
+    expect(llm.callCount).toBe(3);
+    expect(scoreRunState(db, clock, id)?.progress).toMatchObject({ done: 3, total: 3 });
+  });
+
+  it('keeps a stop across the next progress write', () => {
+    const { db, clock } = setup(['Senior Frontend Engineer']);
+    const id = startScoreRun(db, clock, { first: ['portland'], limit: 40, onlyFirst: true });
+    expect(requestScoreStop(db, clock, id)).toBe(true);
+    trackScoreRun(db, clock, id, {
+      first: ['portland'],
+      jobIds: null,
+      industry: null,
+      onlyFirst: true,
+      limit: 40,
+      stop: false,
+      concurrency: 6,
+    })({ done: 1, total: 40, found: 0 });
+    expect(scoreRunState(db, clock, id)).toMatchObject({ stop: true, progress: { done: 1 } });
+    expect(requestScoreStop(db, clock, 999)).toBe(false);
+  });
+
+  it('prices a later overlapping run from a one-at-a-time batch without dividing twice', () => {
+    const { db } = setup([]);
+    const early = fixedClock('2026-10-25T12:00:00.000Z');
+    const late = fixedClock('2026-10-25T12:09:00.000Z');
+    const id = runsRepo(db, early).start('score');
+    runsRepo(db, late).finish(id, { ok: true, stats: { scored: 150 } });
+    const pace = scorePace(db, late, 'claude-haiku-5-5');
+    // 540s / 150 jobs, recorded as one-at-a-time, spread across 6 calls.
+    expect(pace.secondsEach).toBeCloseTo(0.6, 5);
+    expect(pace.perScoreUsd).toBeNull();
+    expect(formatScoreDuration(15 * 60)).toBe('about 15 min');
+    expect(formatScoreDuration(3.7 * 3600)).toBe('about 3.7 hours');
+    expect(formatScorePlan(2, pace)).toBe(
+      'up to 2 jobs · cost unknown · about 1 second · 6 at a time',
+    );
+
+    const again = fixedClock('2026-10-25T13:00:00.000Z');
+    const parallel = runsRepo(db, again).start('score');
+    runsRepo(db, fixedClock('2026-10-25T13:01:30.000Z')).finish(parallel, {
+      ok: true,
+      stats: { scored: 150, concurrency: 6 },
+    });
+    expect(scorePace(db, again, 'claude-haiku-5-5').secondsEach).toBeCloseTo(0.6, 5);
+
+    // One job cannot fill six slots. 4s for that one job is 4/6 s at full overlap.
+    const one = runsRepo(db, fixedClock('2026-10-25T14:00:00.000Z')).start('score');
+    runsRepo(db, fixedClock('2026-10-25T14:00:04.000Z')).finish(one, {
+      ok: true,
+      stats: { scored: 1, concurrency: 6 },
+    });
+    expect(
+      scorePace(db, fixedClock('2026-10-25T14:01:00.000Z'), 'claude-haiku-5-5').secondsEach,
+    ).toBeCloseTo(4 / 6, 5);
   });
 
   it('keeps the heartbeat progress when a run is finished with its score stats', () => {

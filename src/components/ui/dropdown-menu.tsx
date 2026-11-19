@@ -33,6 +33,24 @@ function DropdownMenuLabel({ className, ...props }: React.ComponentProps<typeof 
   return <DropdownMenuPrimitive.Label className={cn("hud-label px-2 pb-1 pt-1.5 text-fg-3", className)} {...props} />;
 }
 
+function DropdownMenuItem({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Item>) {
+  return (
+    <DropdownMenuPrimitive.Item
+      className={cn(
+        "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg-2 outline-none",
+        "before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-brand-hi before:opacity-0",
+        "data-[disabled]:pointer-events-none data-[disabled]:opacity-45",
+        "data-[highlighted]:row-wash data-[highlighted]:bg-surface-3 data-[highlighted]:text-fg data-[highlighted]:before:opacity-100",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 function DropdownMenuRadioItem({
   className,
   children,
@@ -61,6 +79,7 @@ export {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
 };

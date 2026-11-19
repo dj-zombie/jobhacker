@@ -46,6 +46,35 @@ export interface WorkspaceAnswer {
   stored: boolean;
 }
 
+/** One of the job's apply links on the employer's own site, as the job-board notice lists it (J29). */
+export interface WorkspaceApplyLink {
+  publisher: string;
+  host: string;
+  url: string;
+  direct: boolean;
+}
+
+/** What Open & fill would do now, planned before it's pressed (J29). */
+export interface WorkspaceApply {
+  /**
+   * `stop`: the link is on a job board, so Open & fill opens nothing. `links` are on the
+   * employer's own site; `otherLinks` counts the rest. `employerNamed` is false for "Remote" and the like.
+   */
+  plan:
+    | { kind: 'open'; host: string; adapter: string }
+    | {
+        kind: 'stop';
+        host: string;
+        links: WorkspaceApplyLink[];
+        otherLinks: number;
+        employerNamed: boolean;
+      };
+  /** The employer link Kris set on this application. */
+  employerLink: { url: string; host: string } | null;
+  /** The last fill found no form, on the page Open & fill would open again. */
+  noForm: { host: string; reason: string } | null;
+}
+
 export interface WorkspaceData {
   applicationId: number;
   jobId: number;
@@ -63,6 +92,7 @@ export interface WorkspaceData {
   band: Band | null;
   logo: CompanyLogoRef;
   fill: FillView;
+  apply: WorkspaceApply;
   /** False until Open & fill has run once. */
   filled: boolean;
   /** `provided`: the PDF is Kris's own `input/resume.pdf`, which Open & fill attaches as it is (D124). */

@@ -2,7 +2,7 @@ import { loadAllConfig } from '../../core/config/load.js';
 import { createDb } from '../../core/db/client.js';
 import { VERDICTS } from '../../core/db/schema.js';
 import { parseWhere, sortAreas, whereDefault, whereLabel } from '../../core/pipeline/areas.js';
-import { type RankedRow, rankedList } from '../../core/pipeline/ranked.js';
+import { type RankedRow, rankedList, rankingOf } from '../../core/pipeline/ranked.js';
 import { reconcilePlacement } from '../../core/pipeline/reconcile.js';
 import { scoringInputs } from '../../core/pipeline/score.js';
 import { systemClock } from '../../core/util/clock.js';
@@ -42,12 +42,9 @@ export function rankCommand(options: { n?: string; verdict?: string; where?: str
     const where =
       options.where === undefined ? whereDefault(criteria) : parseWhere(options.where, criteria);
     reconcilePlacement(opened.db, criteria, config.preferences, systemClock);
-    const all = rankedList(
-      opened.db,
-      systemClock,
-      { weights: criteria.weights, bands: criteria.bands, current: key },
-      { areas: where },
-    );
+    const all = rankedList(opened.db, systemClock, rankingOf(criteria, { current: key }), {
+      areas: where,
+    });
     const filtered = verdict ? all.filter((row) => row.verdict === verdict) : all;
     const rows = filtered.slice(0, n);
     const whereText = whereLabel(criteria, where);

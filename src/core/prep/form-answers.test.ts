@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { OpenQuestion } from '../apply/types.js';
 import type { Profile } from '../config/schemas.js';
 import { FakeLlm } from '../llm/fake.js';
-import { draftFormAnswers, renderProfileForAnswers, storedAnswer } from './form-answers.js';
+import {
+  draftFormAnswers,
+  guidedQuestionKind,
+  renderProfileForAnswers,
+  storedAnswer,
+} from './form-answers.js';
 
 const PROFILE: Profile = {
   contact: { name: 'Kris Tester', email: 'k@example.com', phone: '555', location: 'Phoenix, AZ' },
@@ -101,6 +106,7 @@ describe('draftFormAnswers', () => {
     expect(user).toContain('Remote first.');
     expect(user).not.toContain('k@example.com');
     expect(user).not.toContain('555');
+    expect(user).not.toContain("Kris's drafts and notes");
   });
 
   it('retries only the rejected drafts, then turns a repeat failure into NEEDS INPUT', async () => {
@@ -179,6 +185,200 @@ describe('draftFormAnswers', () => {
     const res = await draftFormAnswers(deps(llm), []);
     expect(llm.callCount).toBe(0);
     expect(res.answers).toEqual([]);
+  });
+
+  it('rewrites his own draft: his words ground it, and an essay need not cite a bullet', async () => {
+    const essay = QUESTIONS[1] as OpenQuestion;
+    const llm = new FakeLlm({
+      responses: {
+        'form-answers': {
+          answers: [
+            {
+              id: 0,
+              answer:
+                'The CLAP paper stood out because it lets a sampler find sounds from a sentence. That is the idea behind Tonegrid.',
+              needs_input: null,
+              source_ids: [],
+            },
+          ],
+        },
+      },
+    });
+    const res = await draftFormAnswers(
+      deps(llm),
+      [essay],
+      new Map([
+        [
+          0,
+          {
+            draft: 'i liked the CLAP paper, find sounds by describing them, its what Tonegrid does',
+            note: 'Two sentences. Sound excited.',
+          },
+        ],
+      ]),
+    );
+    expect(llm.callCount).toBe(1);
+    expect(res.rejected).toBe(0);
+    expect(res.answers[0]?.answer).toContain('Tonegrid');
+    const user = llm.requests[0]?.user ?? '';
+    expect(user).toContain("Kris's draft:\ni liked the CLAP paper");
+    expect(user).toContain("Kris's note: Two sentences. Sound excited.");
+    expect(user).toContain("## Kris's drafts and notes");
+  });
+
+  it('still rejects a fact that is in neither his draft, his note, nor the profile', async () => {
+    const essay = QUESTIONS[1] as OpenQuestion;
+    const invented = {
+      answers: [
+        {
+          id: 0,
+          answer: 'I liked the CLAP paper and used it in a Vue app that cut load time 40%.',
+          needs_input: null,
+          source_ids: [],
+        },
+      ],
+    };
+    const llm = new FakeLlm({ responses: { 'form-answers': invented } });
+    const res = await draftFormAnswers(
+      deps(llm),
+      [essay],
+      new Map([[0, { draft: 'I liked the CLAP paper.' }]]),
+    );
+    expect(llm.callCount).toBe(2);
+    expect(res.answers[0]?.answer).toBeNull();
+    expect(res.answers[0]?.needsInput).toMatch(/"Vue" is not in the profile/);
+    expect(res.answers[0]?.needsInput).toMatch(/number "40" is not in the profile/);
+  });
+
+  it('accepts a proper noun that the note names and the profile does not', async () => {
+    const essay = QUESTIONS[1] as OpenQuestion;
+    const llm = new FakeLlm({
+      responses: {
+        'form-answers': {
+          answers: [
+            {
+              id: 0,
+              answer:
+                'At Acme I rebuilt the React design system used by 12 product teams, using Elizalde as the reference.',
+              needs_input: null,
+              source_ids: ['acme-1'],
+            },
+          ],
+        },
+      },
+    });
+    const res = await draftFormAnswers(
+      deps(llm),
+      [essay],
+      new Map([[0, { note: 'Mention Elizalde. I am excited about the idea.' }]]),
+    );
+    expect(res.rejected).toBe(0);
+    expect(res.answers[0]?.answer).toContain('Elizalde');
+    expect(llm.requests[0]?.user).toContain("Kris's note: Mention Elizalde.");
+  });
+
+  it('uses the page he linked, keeps its numbers out, and does not invent one when the link cannot be read', async () => {
+    const essay = QUESTIONS[1] as OpenQuestion;
+    const page = {
+      terms: 'Elizalde, Benjamin\nCLAP connects language and audio. We evaluated 16 tasks.',
+      numbers: '2206.04769',
+    };
+    const note = 'Use https://arxiv.org/abs/2206.04769. I am excited about it.';
+    const llm = new FakeLlm({
+      responses: {
+        'form-answers': {
+          answers: [
+            {
+              id: 0,
+              answer: "Elizalde, Benjamin's CLAP paper connects language and audio.",
+              needs_input: null,
+              source_ids: [],
+            },
+          ],
+        },
+      },
+    });
+    const linked = await draftFormAnswers(
+      { ...deps(llm), readLink: async () => page },
+      [essay],
+      new Map([[0, { note }]]),
+    );
+    expect(linked.answers[0]?.answer).toContain('Elizalde');
+    expect(llm.callCount).toBe(1);
+    expect(llm.requests[0]?.user).toContain('Source page he linked:');
+
+    const withMetric = new FakeLlm({
+      responses: {
+        'form-answers': {
+          answers: [
+            {
+              id: 0,
+              answer: 'Elizalde showed CLAP on 16 tasks.',
+              needs_input: null,
+              source_ids: [],
+            },
+          ],
+        },
+      },
+    });
+    const metric = await draftFormAnswers(
+      { ...deps(withMetric), readLink: async () => page },
+      [essay],
+      new Map([[0, { note }]]),
+    );
+    expect(metric.answers[0]?.answer).toBeNull();
+    expect(metric.answers[0]?.needsInput).toMatch(/number "16" is not in the profile/);
+
+    const unread = new FakeLlm({ responses: { 'form-answers': { answers: [] } } });
+    const missing = await draftFormAnswers(
+      { ...deps(unread), readLink: async () => null },
+      [essay],
+      new Map([[0, { note: 'https://example.com/paper and I am excited about it.' }]]),
+    );
+    expect(unread.callCount).toBe(0);
+    expect(missing.answers[0]?.needsInput).toBe('could not read https://example.com/paper');
+
+    const local = new FakeLlm({ responses: {} });
+    const blocked = await draftFormAnswers(
+      deps(local),
+      [essay],
+      new Map([[0, { note: 'https://127.0.0.1/secret' }]]),
+    );
+    expect(local.callCount).toBe(0);
+    expect(blocked.answers[0]?.needsInput).toBe('that link is not a public page');
+  });
+});
+
+describe('guidedQuestionKind', () => {
+  it('treats a long or essay-shaped question as a textarea', () => {
+    expect(guidedQuestionKind('Share your favorite paper. In two sentences, say why.')).toBe(
+      'textarea',
+    );
+    expect(guidedQuestionKind('Why this role?')).toBe('textarea');
+    expect(guidedQuestionKind('GitHub username')).toBe('text');
+  });
+
+  it('keeps a short answer short, including yes or no on a long question', () => {
+    const warp = 'If hired by Warp, will you be based in the U.S. or Canada?';
+    expect(guidedQuestionKind(warp, 'Yes')).toBe('text');
+    expect(guidedQuestionKind(warp, 'No')).toBe('text');
+    expect(guidedQuestionKind('Why this role?', 'Yes')).toBe('text');
+    expect(
+      guidedQuestionKind(
+        'What is your notice period if you accepted an offer tomorrow morning?',
+        'Two weeks',
+      ),
+    ).toBe('text');
+  });
+
+  it('treats a question that opens as yes or no as one line', () => {
+    expect(guidedQuestionKind('If hired by Warp, will you be based in the U.S. or Canada?')).toBe(
+      'text',
+    );
+    expect(guidedQuestionKind('Are you authorized to work in the United States?')).toBe('text');
+    expect(
+      guidedQuestionKind('Why this role?', 'I want to work on the sampler because it fits'),
+    ).toBe('textarea');
   });
 });
 

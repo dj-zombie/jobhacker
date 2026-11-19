@@ -8,6 +8,7 @@ import { chargeCall } from '../sources/budget.js';
 import { seedJobs, testCriteria } from '../testing/fixtures.js';
 import { fixedClock } from '../util/clock.js';
 import { scoutCard, scoutCheckedWords, scoutStaleBanner } from './scout-card.js';
+import { pulseScoutRun } from './scout.js';
 
 const NOW = '2026-10-25T12:00:00.000Z';
 const clock = fixedClock(NOW);
@@ -104,6 +105,24 @@ describe('scoutCard', () => {
         text: "Slow: the Lever board's server failed (503). Run scout again.",
       },
       { text: 'JSearch failed: the server returned 500. Run scout again.' },
+    ]);
+  });
+
+  it('says a JSearch abort was a timeout', () => {
+    const { db } = createMigratedTestDb();
+    finishedRun(db, true, {
+      errors: [
+        {
+          company: 'jsearch',
+          ats: 'jsearch',
+          token: 'search',
+          message:
+            'network error for https://api.openwebninja.com/jsearch/search?query=senior+frontend+engineer: This operation was aborted',
+        },
+      ],
+    });
+    expect(scoutCard(db, clock, criteria()).notices).toEqual([
+      { text: 'JSearch failed: the request timed out. Run scout again.' },
     ]);
   });
 
@@ -281,7 +300,10 @@ describe('scoutCard', () => {
 
   it('is running, with progress, while a recent run has no finish time', () => {
     const { db } = createMigratedTestDb();
-    runsRepo(db, fixedClock('2026-10-25T11:50:00.000Z')).start('scout');
+    const id = runsRepo(db, fixedClock('2026-10-25T11:50:00.000Z')).start('scout');
+    runsRepo(db, fixedClock('2026-10-25T11:59:30.000Z')).progress(id, {
+      beatAt: '2026-10-25T11:59:30.000Z',
+    });
     seedJobs(db, fixedClock('2026-10-25T11:55:00.000Z'), [{ title: 'A' }, { title: 'B' }]);
     const card = scoutCard(db, clock, criteria());
     expect(card).toMatchObject({
@@ -294,6 +316,22 @@ describe('scoutCard', () => {
   it('fails when a run started hours ago never finished', () => {
     const { db } = createMigratedTestDb();
     runsRepo(db, fixedClock('2026-10-25T06:00:00.000Z')).start('scout');
+    const card = scoutCard(db, clock, criteria());
+    expect(card).toMatchObject({
+      status: 'failed',
+      running: false,
+      progress: null,
+      notices: [{ text: 'The last scout never finished' }],
+    });
+  });
+
+  it('fails when the heartbeat stopped, even though the run started minutes ago', () => {
+    const { db } = createMigratedTestDb();
+    const id = runsRepo(db, fixedClock('2026-10-25T11:50:00.000Z')).start('scout');
+    runsRepo(db, fixedClock('2026-10-25T11:50:14.000Z')).progress(id, {
+      progress: { done: 13, total: 532, found: 1, unit: 'Board' },
+      beatAt: '2026-10-25T11:50:14.000Z',
+    });
     const card = scoutCard(db, clock, criteria());
     expect(card).toMatchObject({
       status: 'failed',
@@ -333,6 +371,30 @@ function finishedScout(db: Db, finishedIso: string): void {
   const id = runsRepo(db, fixedClock(start)).start('scout');
   runsRepo(db, fixedClock(finishedIso)).finish(id, { ok: true, stats: {} });
 }
+
+describe('pulseScoutRun', () => {
+  it('rewrites the heartbeat while the process is alive, and leaves a finished run alone', async () => {
+    const { db } = createMigratedTestDb();
+    const id = runsRepo(db, clock).start('scout');
+    const stop = pulseScoutRun(
+      db,
+      clock,
+      id,
+      () => ({ done: 13, total: 532, found: 1, unit: 'Board' }),
+      20,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(runsRepo(db, clock).get(id)?.stats).toMatchObject({
+      beatAt: NOW,
+      progress: { done: 13, total: 532, found: 1, unit: 'Board' },
+    });
+    runsRepo(db, clock).finish(id, { ok: false, stats: { inserted: 1 }, error: 'stopped' });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    stop();
+    expect(runsRepo(db, clock).get(id)?.stats).toEqual({ inserted: 1 });
+    expect(runsRepo(db, clock).get(id)?.error).toBe('stopped');
+  });
+});
 
 describe('scoutStaleBanner', () => {
   it('a finished scout 8 days ago returns a banner', () => {

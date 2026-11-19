@@ -1,8 +1,9 @@
-import type { Bands, Weights } from '../config/schemas.js';
+import type { Bands, Criteria, Weights } from '../config/schemas.js';
 import type { Db } from '../db/client.js';
 import { type ListFilters, type ScoredRow, scoresRepo } from '../db/repo/scores.js';
 import type { Verdict } from '../db/schema.js';
 import type { Clock } from '../util/clock.js';
+import { companyOnList } from '../util/company-match.js';
 import { type Ranked, rankJobs } from './rank.js';
 import type { ScoringKey } from './score.js';
 
@@ -25,6 +26,21 @@ export interface RankingConfig {
   bands: Bands;
   /** The current scoring key; omit to skip the stale check. */
   current?: ScoringKey;
+  /** Listed companies. Absent or empty: no rank bump (J27). */
+  targetCompanies?: readonly string[];
+}
+
+/** The saved weights, bands and company list, with a live weight or band override. */
+export function rankingOf(
+  criteria: Pick<Criteria, 'weights' | 'bands' | 'target_companies'>,
+  extra: { current?: ScoringKey; weights?: Weights; bands?: Bands } = {},
+): RankingConfig {
+  return {
+    weights: extra.weights ?? criteria.weights,
+    bands: extra.bands ?? criteria.bands,
+    current: extra.current,
+    targetCompanies: criteria.target_companies ?? [],
+  };
 }
 
 export function isStale(
@@ -47,7 +63,17 @@ export function rankedList(
   options: RankedOptions = {},
 ): RankedRow[] {
   const { verdict, limit, ...filters } = options;
-  const ranked = rankJobs(scoresRepo(db, clock).scoredRows(filters), config.weights, config.bands)
+  const list = config.targetCompanies ?? [];
+  const ranked = rankJobs(
+    scoresRepo(db, clock)
+      .scoredRows(filters)
+      .map((row) => ({
+        ...row,
+        target: companyOnList(row.company, list) !== null,
+      })),
+    config.weights,
+    config.bands,
+  )
     .filter((row) => !verdict || row.verdict === verdict)
     .map((row) => ({ ...row, stale: isStale(row, config.current) }));
   return limit != null ? ranked.slice(0, limit) : ranked;

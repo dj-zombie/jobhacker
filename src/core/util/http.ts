@@ -115,7 +115,7 @@ export function createHttp(options: HttpOptions = {}): Http {
           body,
         );
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = networkMessage(err, init?.timeoutMs ?? timeoutMs);
         lastError = new HttpError(`network error for ${url}: ${message}`, url);
         if (attempt === tries) throw lastError;
         await sleep(backoffMs(attempt));
@@ -183,6 +183,19 @@ async function request(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Our abort has no reason, so fetch reports "This operation was aborted". Say it timed out. */
+function networkMessage(err: unknown, timeoutMs: number): string {
+  if (isAbortError(err)) return `timed out after ${timeoutMs}ms`;
+  return err instanceof Error ? err.message : String(err);
+}
+
+function isAbortError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  if ('name' in err && err.name === 'AbortError') return true;
+  if ('cause' in err) return isAbortError(err.cause);
+  return false;
 }
 
 async function errorDetail(response: Response): Promise<string> {

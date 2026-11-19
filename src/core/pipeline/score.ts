@@ -21,6 +21,9 @@ import { locationFact, whereDefault } from './areas.js';
 import type { GateStats } from './gate.js';
 import { computeRank, verdictFor } from './rank.js';
 import { reconcilePlacement } from './reconcile.js';
+import { SCORE_CONCURRENCY } from './score-format.js';
+
+export { SCORE_CONCURRENCY };
 
 /**
  * Dimension scoring (FR-5, FR-5b, ARCHITECTURE § Flows). Each run first
@@ -29,8 +32,14 @@ import { reconcilePlacement } from './reconcile.js';
  * first (`first`, default `where_default`), then by prescore:
  *
  *  - cache hit on (job, content hash, rubric, model, profile, preferences) → `scored`, free;
- *  - the per-run cap reached → `run_cap` is stored;
+ *  - the run's cap reached → `run_cap` is stored;
  *  - otherwise one LLM call for the six dimensions → `scored`.
+ *
+ * With no `limit`, the cap is `budget.max_new_scores_per_run` (what scout uses).
+ * An explicit `limit` is the cap for that run and may be higher (D177). `onlyFirst`
+ * scores jobs in `first` and leaves the rest untouched. Up to `SCORE_CONCURRENCY`
+ * calls are in flight (D178). `shouldStop` finishes calls already sent and starts
+ * no more.
  *
  * A job that already has a dimension score under an older key keeps it (and
  * stays `scored`, shown as stale) until it is rescored. One job's failure is
@@ -74,13 +83,29 @@ export interface ScoreDeps {
   criteria: Criteria;
   profile: Profile;
   preferences: string;
-  /** Lowers the per-run cap for this invocation (never raises it above criteria). */
+  /**
+   * This run's cap. Absent: `budget.max_new_scores_per_run`. Present: that many
+   * model calls, even when it is above the config cap (D177). `0` makes no calls.
+   */
   limit?: number;
   /**
+   * Score jobs in `first` and then stop. Jobs outside those places are left as
+   * they are, not marked `run_cap`.
+   */
+  onlyFirst?: boolean;
+  /** Return true to stop starting calls. Ones already sent still finish. */
+  shouldStop?: () => boolean;
+  /**
    * Areas whose jobs are scored first (PLACES § 6). Defaults to `where_default`;
-   * the UI passes the view's Where. `[]` puts no place first. Never skips a job.
+   * the UI passes the view's Where. `[]` puts no place first. A normal run never
+   * skips a job. `onlyFirst` does, and only those places.
    */
   first?: readonly string[];
+  /**
+   * Companies in this industry are scored first, ahead of `first` (J26).
+   * Absent: no industry goes first. Never skips a job.
+   */
+  industry?: string;
   /** Score only these jobs, e.g. the UI's "Score this job". Absent: every scorable job. */
   jobIds?: readonly number[];
   /** Called once before the first model call, then after every model attempt. */
@@ -142,16 +167,16 @@ export async function scoreNewJobs(deps: ScoreDeps): Promise<ScoreResult> {
   const inputs = scoringInputs(criteria, deps.profile, deps.preferences);
   const { model } = inputs.key;
   const configCap = criteria.budget.max_new_scores_per_run;
-  const cap = deps.limit != null ? Math.min(configCap, Math.max(0, deps.limit)) : configCap;
+  const cap = deps.limit != null ? Math.max(0, Math.floor(deps.limit)) : configCap;
 
   const first = [...(deps.first ?? whereDefault(criteria))];
-  const candidates = jobsWrites.listScorable({ key: inputs.key, first, jobIds: deps.jobIds });
-  const progress: ScoreProgress = {
-    done: 0,
-    total: Math.min(cap, candidates.filter((job) => !job.current).length),
-    found: 0,
-  };
-  deps.onProgress?.({ ...progress });
+  const candidates = jobsWrites.listScorable({
+    key: inputs.key,
+    first,
+    jobIds: deps.jobIds,
+    targets: criteria.target_companies ?? [],
+    ...(deps.industry ? { industry: deps.industry } : {}),
+  });
   const stats: ScoreStats = {
     gates,
     prescored,
@@ -171,6 +196,7 @@ export async function scoreNewJobs(deps: ScoreDeps): Promise<ScoreResult> {
     cost_is_estimate: !hasPrice(model),
   };
 
+  const queue: ScorableJob[] = [];
   for (const job of candidates) {
     const key: ScoreKey = { jobId: job.id, contentHash: job.contentHash, ...inputs.key };
     if (scores.findCached(key)) {
@@ -178,18 +204,27 @@ export async function scoreNewJobs(deps: ScoreDeps): Promise<ScoreResult> {
       stats.cached += 1;
       continue;
     }
+    if (deps.onlyFirst && !job.inFirst) continue;
 
     const hasDimensions = scores.hasDimensions(job.id, job.contentHash);
-    if (hasDimensions) jobsWrites.setScoreState(job.id, 'stale', true);
-
     // The cap counts every new model attempt, success or failure, so a run of
-    // invalid output cannot call the API past it (Known issue [2]).
-    if (stats.scored + stats.errors >= cap) {
+    // invalid output cannot call the API past it (Known issue [2]). Slots are
+    // reserved here, before a call starts, so overlapping calls can't pass it.
+    if (queue.length >= cap) {
       stats.skipped_cap += 1;
       jobsWrites.setScoreState(job.id, 'run_cap', hasDimensions);
       continue;
     }
+    queue.push(job);
+  }
 
+  const progress: ScoreProgress = { done: 0, total: queue.length, found: 0 };
+  deps.onProgress?.({ ...progress });
+
+  const scoreOne = async (job: ScorableJob): Promise<void> => {
+    const key: ScoreKey = { jobId: job.id, contentHash: job.contentHash, ...inputs.key };
+    const hasDimensions = scores.hasDimensions(job.id, job.contentHash);
+    if (hasDimensions) jobsWrites.setScoreState(job.id, 'stale', true);
     try {
       const result = await llm.structured({
         model,
@@ -205,6 +240,8 @@ export async function scoreNewJobs(deps: ScoreDeps): Promise<ScoreResult> {
       });
 
       const dimensions: Dimensions = result.value.dimensions;
+      // The stored snapshot stays the uncapped-by-list score. The list re-ranks
+      // on read, the same way weights do, so editing it costs no model call.
       const snapshot = computeRank(dimensions, criteria.weights, criteria.bands);
       const verdict = verdictFor(snapshot.score, criteria.bands);
       scores.insert({
@@ -267,9 +304,55 @@ export async function scoreNewJobs(deps: ScoreDeps): Promise<ScoreResult> {
     }
     progress.done = stats.scored + stats.errors;
     deps.onProgress?.({ ...progress });
-  }
+  };
 
+  await runScorePool(queue, scoreOne, () => deps.shouldStop?.() === true);
   return { stats };
+}
+
+/**
+ * Keep at most `SCORE_CONCURRENCY` calls in flight. `stop` finishes the ones
+ * already started and launches no more. Writes inside `scoreOne` happen on the
+ * event loop after each call returns, so they don't interleave.
+ */
+async function runScorePool(
+  queue: readonly ScorableJob[],
+  scoreOne: (job: ScorableJob) => Promise<void>,
+  stop: () => boolean,
+): Promise<void> {
+  if (queue.length === 0 || stop()) return;
+  await new Promise<void>((resolve, reject) => {
+    let cursor = 0;
+    let active = 0;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+    const launch = () => {
+      if (settled) return;
+      while (active < SCORE_CONCURRENCY && cursor < queue.length && !stop()) {
+        const job = queue[cursor];
+        cursor += 1;
+        if (!job) break;
+        active += 1;
+        void scoreOne(job).then(() => {
+          active -= 1;
+          if (settled) return;
+          if (cursor < queue.length && !stop()) launch();
+          else if (active === 0) finish();
+        }, fail);
+      }
+      if (active === 0) finish();
+    };
+    launch();
+  });
 }
 
 /** Summary, skills and experience. Never contact details or links (invariant 4). */

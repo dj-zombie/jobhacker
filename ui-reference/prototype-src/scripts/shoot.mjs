@@ -3,7 +3,10 @@ import path from "node:path";
 
 const url = "file://" + path.resolve("dist/index.html");
 const out = process.argv[2] || "../screens";
-const only = process.argv[3] || "";
+const only = (process.argv[3] || process.env.SHOOT_ONLY || "")
+  .split(",")
+  .map((part) => part.trim())
+  .filter(Boolean);
 const errors = [];
 
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
@@ -18,14 +21,86 @@ async function page(w, h, query = "") {
   return p;
 }
 const shot = async (p, name) => {
-  if (only && !name.includes(only)) return;
+  if (only.length && !only.some((part) => name.includes(part))) return;
   await p.screenshot({ path: `${out}/${name}.png` });
   console.log("shot", name);
 };
 
-// Desktop 1440
+// Dashboard — the landing at "/". Top of each size (settled), the lower sections scrolled into
+// view, then the live scout sweep (BootLog goes live, the header's Run scout locks to Scouting,
+// the sidebar scout card runs its radar).
+for (const [w, h, size] of [
+  [1920, 1080, "1920"],
+  [1440, 900, "1440"],
+  [1024, 768, "1024"],
+  [390, 844, "390"],
+]) {
+  const p = await page(w, h, "?logos=demo");
+  await p.waitForTimeout(1500); // let the count-ups and bars settle before the frame
+  await shot(p, `00-dashboard-${size}`);
+  const scroller = p.locator("main .overflow-y-auto").first();
+  // Mission board — applications in flight: company logos, stage, last employer contact, action chips.
+  await p.getByText("Applications in flight").first().scrollIntoViewIfNeeded();
+  await p.waitForTimeout(400);
+  await shot(p, `00-dashboard-apps-${size}`);
+  if (size === "1440" || size === "1920") {
+    await scroller.evaluate((el) => {
+      el.scrollTop = Math.round(el.scrollHeight * 0.42);
+    });
+    await p.waitForTimeout(500);
+    await shot(p, `00-dashboard-mid-${size}`);
+  }
+  await scroller.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await p.waitForTimeout(600);
+  await shot(p, `00-dashboard-low-${size}`);
+  await p.context().close();
+}
 {
-  const p = await page(1440, 900);
+  const p = await page(1440, 900, "?logos=demo");
+  await p.waitForTimeout(1200);
+  await p.getByRole("button", { name: "Run scout" }).first().click();
+  await p.waitForTimeout(1200);
+  await shot(p, "00-dashboard-scout-1440");
+  await p.context().close();
+}
+
+// Wide triage: from an 896px detail pane the description is the main column, with the score,
+// red flags and breakdown beside it. 1728×964 is a 16-inch MacBook's browser window.
+for (const [w, h, size] of [
+  [1728, 964, "1728"],
+  [1920, 1080, "1920"],
+]) {
+  const p = await page(w, h, "?at=/matches");
+  await shot(p, `01-top-${size}`);
+  if (size === "1728") {
+    await p.keyboard.press("d");
+    for (let i = 0; i < 5; i++) await p.keyboard.press("j");
+    await p.waitForTimeout(900);
+    await shot(p, "17-compact-fictiv-1728");
+    await p.keyboard.press("d");
+  }
+  if (size === "1920") {
+    await p.locator('[role="option"]').nth(5).hover();
+    await p.waitForTimeout(300);
+    await shot(p, "03-row-hover-1920");
+    await p.mouse.move(w - 40, h - 40);
+    await p.locator("[data-detail-scroll]").evaluate((el) => {
+      el.scrollTop = 420;
+    });
+    await p.waitForTimeout(500);
+    await shot(p, "01-top-scrolled-1920");
+    await p.getByRole("link", { name: /Unscored/ }).click();
+    await p.waitForTimeout(1000);
+    await shot(p, "09-unscored-1920");
+  }
+  await p.context().close();
+}
+
+// Desktop 1440 — Top matches now lives at /matches.
+{
+  const p = await page(1440, 900, "?at=/matches");
   await shot(p, "01-top-1440");
   await p.keyboard.press("j");
   await p.keyboard.press("j");
@@ -99,7 +174,7 @@ const shot = async (p, name) => {
 
 // Where filter
 {
-  const p = await page(1440, 900);
+  const p = await page(1440, 900, "?at=/matches");
   await p.getByRole("button", { name: /^Anywhere$/ }).click();
   await p.waitForTimeout(500);
   await p.getByRole("button", { name: /^Portland/ }).click();
@@ -123,14 +198,14 @@ const shot = async (p, name) => {
 
 // 1024 laptop
 {
-  const p = await page(1024, 768);
+  const p = await page(1024, 768, "?at=/matches");
   await shot(p, "16-top-1024");
   await p.context().close();
 }
 
 // compact density 1440
 {
-  const p = await page(1440, 900);
+  const p = await page(1440, 900, "?at=/matches");
   await p.keyboard.press("d");
   await p.waitForTimeout(800);
   await shot(p, "17-compact-1440");
@@ -139,7 +214,7 @@ const shot = async (p, name) => {
 
 // Phone
 {
-  const p = await page(390, 844);
+  const p = await page(390, 844, "?at=/matches");
   await shot(p, "18-phone-list");
   await p.locator('[role="option"]').first().click();
   await p.waitForTimeout(700);
@@ -170,7 +245,7 @@ for (const [w, h, size, mobile] of [
   [390, 844, "390", true],
 ]) {
   {
-    const p = await page(w, h);
+    const p = await page(w, h, "?at=/matches");
     await p.keyboard.press("t");
     await p.waitForTimeout(700);
     await shot(p, `05-tune-${size}`);
@@ -207,7 +282,7 @@ for (const [w, h, size, mobile] of [
     await p.context().close();
   }
   {
-    const p = await page(w, h);
+    const p = await page(w, h, "?at=/matches");
     await p.getByRole("button", { name: /^Anywhere$/ }).click();
     await p.waitForTimeout(500);
     await p.getByRole("button", { name: /^Portland/ }).click();
@@ -219,12 +294,12 @@ for (const [w, h, size, mobile] of [
 
 // The scout card when the unattended scout needs Kris (status "attention", with notices).
 {
-  const p = await page(1440, 900, "?scout=attention");
+  const p = await page(1440, 900, "?scout=attention&at=/matches");
   await shot(p, "26-scout-attention-1440");
   await p.context().close();
 }
 {
-  const p = await page(390, 844, "?scout=attention");
+  const p = await page(390, 844, "?scout=attention&at=/matches");
   await p.getByRole("button", { name: "Open navigation" }).first().click();
   await p.waitForTimeout(700);
   await shot(p, "26-scout-attention-390");
@@ -237,7 +312,7 @@ for (const [w, h, size] of [
   [1024, 768, "1024"],
   [390, 844, "390"],
 ]) {
-  const p = await page(w, h, "?logos=demo");
+  const p = await page(w, h, "?logos=demo&at=/matches");
   await shot(p, `27-logos-${size}`);
   await p.context().close();
 }
@@ -267,7 +342,7 @@ async function selectRow(p, withLogo) {
 }
 
 {
-  const p = await page(1440, 900, "?logos=demo");
+  const p = await page(1440, 900, "?logos=demo&at=/matches");
   await selectRow(p, true);
   await shot(p, "30-header-1440");
   await p.locator("[data-detail-scroll]").evaluate((el) => {
@@ -278,7 +353,7 @@ async function selectRow(p, withLogo) {
   await p.context().close();
 }
 {
-  const p = await page(1440, 900, "?logos=demo");
+  const p = await page(1440, 900, "?logos=demo&at=/matches");
   await selectRow(p, false);
   await shot(p, "31-header-monogram-1440");
   await p.context().close();
@@ -287,7 +362,7 @@ for (const [w, h, size] of [
   [1024, 768, "1024"],
   [390, 844, "390"],
 ]) {
-  const p = await page(w, h, "?logos=demo");
+  const p = await page(w, h, "?logos=demo&at=/matches");
   await selectRow(p, true);
   await p.waitForTimeout(size === "390" ? 400 : 0);
   await shot(p, `30-header-${size}`);
@@ -311,8 +386,24 @@ for (const [w, h, size] of [
   [1024, 768, "1024"],
   [390, 844, "390"],
 ]) {
-  const p = await page(w, h, "?frame=refresh");
+  const p = await page(w, h, "?frame=refresh&at=/matches");
   await shot(p, `34-refresh-${size}`);
+  await p.context().close();
+}
+// The detail while a job's details load: the app shows it between a key press and the job's
+// description arriving. At 1728 the description and breakdown sit beside the verdict.
+for (const [w, h, size] of [
+  [1728, 964, "1728"],
+  [1440, 900, "1440"],
+  [1024, 768, "1024"],
+  [390, 844, "390"],
+]) {
+  const p = await page(w, h, "?frame=loading&at=/matches");
+  if (size === "390") {
+    await p.locator('[role="option"]').first().click();
+    await p.waitForTimeout(700);
+  }
+  await shot(p, `53-detail-loading-${size}`);
   await p.context().close();
 }
 {
@@ -321,7 +412,7 @@ for (const [w, h, size] of [
   await p.context().close();
 }
 {
-  const p = await page(1440, 900);
+  const p = await page(1440, 900, "?at=/matches");
   await shot(p, "36-last-confirmed-1440");
   await p.context().close();
 }
@@ -355,9 +446,9 @@ for (const [w, h, size, mobile] of [
   [390, 844, "390", true],
 ]) {
   for (const [query, name, paste] of [
-    ["?scout=moved", "40-board-moved", ""],
-    ["?scout=gone", "41-board-gone", ""],
-    ["?scout=gone", "42-board-link-error", "https://example.com/careers"],
+    ["?scout=moved&at=/matches", "40-board-moved", ""],
+    ["?scout=gone&at=/matches", "41-board-gone", ""],
+    ["?scout=gone&at=/matches", "42-board-link-error", "https://example.com/careers"],
   ]) {
     const p = await page(w, h, query);
     if (mobile) {
@@ -379,7 +470,7 @@ for (const [w, h, size, mobile] of [
 
 // Hover states (J17): a sidebar item, a palette item, and the scout card mid-run with its radar.
 {
-  const p = await page(1440, 900);
+  const p = await page(1440, 900, "?at=/matches");
   await p.getByRole("link", { name: /Unscored/ }).hover();
   await p.waitForTimeout(400);
   await shot(p, "43-nav-hover-1440");
@@ -438,6 +529,35 @@ for (const [w, h, size, mobile] of [
   await p.waitForTimeout(400);
   await shot(p, `52-settings-year-only-${size}`);
   await p.context().close();
+}
+
+// Nothing to fill (J29). A search hit whose apply link is on a job board: Open & fill stops before
+// Chrome, and the Apply tab lists the job's links on the employer's own site, a count of the rest,
+// and the employer-link field. The same when the search named no employer. A page that opened
+// with no application form. Then, at 1440, a pasted job-board link refused, and the link set.
+for (const [w, h, size] of [
+  [1440, 900, "1440"],
+  [1024, 768, "1024"],
+  [390, 844, "390"],
+]) {
+  for (const [at, name] of [
+    ["/applications/tailspin", "54-workspace-job-board"],
+    ["/applications/nameless", "54c-workspace-employer-not-named"],
+    ["/applications/contoso", "55-workspace-no-form"],
+  ]) {
+    const p = await page(w, h, `?at=${at}`);
+    await shot(p, `${name}-${size}`);
+    if (size === "1440" && name === "54-workspace-job-board") {
+      await p.getByLabel("Employer's application link").fill("https://prosewarejobs.example/job/1");
+      await p.getByRole("button", { name: "Save", exact: true }).click();
+      await p.waitForTimeout(300);
+      await shot(p, "54a-workspace-link-refused-1440");
+      await p.getByRole("button", { name: "Use this link" }).first().click();
+      await p.waitForTimeout(600);
+      await shot(p, "54b-workspace-employer-link-1440");
+    }
+    await p.context().close();
+  }
 }
 
 await browser.close();

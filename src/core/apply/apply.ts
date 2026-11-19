@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { eq } from 'drizzle-orm';
+import type { Browser } from 'playwright-core';
 import type { Ats, Criteria, Profile } from '../config/schemas.js';
 import type { Db } from '../db/client.js';
 import { applicationsRepo } from '../db/repo/applications.js';
@@ -13,23 +14,15 @@ import { draftFormAnswers, storedAnswer } from '../prep/form-answers.js';
 import { renderJobText } from '../prep/prep.js';
 import { attachmentName, renderCoverLetterHtml, renderResumePdf } from '../prep/render.js';
 import type { Clock } from '../util/clock.js';
+import { urlHost } from '../util/host.js';
 import type { Logger } from '../util/logger.js';
-import { ashbyAdapter } from './adapters/ashby.js';
-import { genericAdapter } from './adapters/generic.js';
-import { greenhouseAdapter } from './adapters/greenhouse.js';
-import { leverAdapter } from './adapters/lever.js';
 import { connectChrome, openApplyPage } from './browser.js';
 import { type FieldMapping, isUsable } from './field-map.js';
 import { fillForm } from './fill.js';
 import { mapFormFields } from './llm-map.js';
+import { type ApplyPlan, adapterForHost, planApply, selectAdapter } from './plan.js';
 import { fillSmartRecruitersForm } from './smartrecruiters.js';
-import {
-  ApplyError,
-  type FillReport,
-  type FormAdapter,
-  type OpenQuestion,
-  type RawFormField,
-} from './types.js';
+import { ApplyError, type FillReport, type OpenQuestion, type RawFormField } from './types.js';
 
 /**
  * Apply-assist orchestration (FR-8, ARCHITECTURE § Flows "Apply assist"). It
@@ -45,68 +38,8 @@ import {
  * generic harvester. Copy-paste is only the result when the page has no fields.
  */
 
-const GREENHOUSE_BOARD = /greenhouse\.io|grnh\.se/i;
-
-/**
- * A SmartRecruiters job ad has an "I'm interested" button and no form. The
- * public posting's apply URL adds `oga=true`, which redirects to Easy Apply.
- */
-export function openSmartRecruitersForm(url: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return url;
-  }
-  if (!/^jobs\.smartrecruiters\.com$/i.test(parsed.hostname)) return url;
-  if (
-    parsed.pathname.includes('/oneclick-ui/') ||
-    parsed.pathname.includes('/external-referrals/')
-  ) {
-    return url;
-  }
-  if (parsed.searchParams.get('oga') === 'true') return parsed.toString();
-  parsed.searchParams.set('oga', 'true');
-  return parsed.toString();
-}
-
-/**
- * The URL to open. An explicit apply URL wins. A Greenhouse job whose stored
- * URL is the company's own career page (Stripe does this) has no form there;
- * the embedded Greenhouse application does.
- */
-export function resolveApplyUrl(input: {
-  ats: string;
-  url: string;
-  applyUrl: string | null;
-  externalId: string;
-  boardToken: string | null;
-}): string {
-  const explicit = input.applyUrl?.trim();
-  if (explicit) return openSmartRecruitersForm(explicit);
-  if (
-    input.ats === 'greenhouse' &&
-    input.boardToken &&
-    input.externalId &&
-    !GREENHOUSE_BOARD.test(input.url)
-  ) {
-    const token = encodeURIComponent(input.boardToken);
-    const id = encodeURIComponent(input.externalId);
-    return `https://job-boards.greenhouse.io/embed/job_app?for=${token}&token=${id}`;
-  }
-  return openSmartRecruitersForm(input.url);
-}
-
-/** ATSs with a form adapter; the UI uses this to offer "Open & fill". */
+/** ATSs whose filler drafts the form's own questions; the others map fields with the model. */
 export const FILLABLE_ATS: readonly Ats[] = ['greenhouse', 'lever', 'ashby'];
-
-/** Pick the form adapter for a job's ATS, or `undefined` for a fallback. */
-export function selectAdapter(ats: Ats): FormAdapter | undefined {
-  if (ats === 'greenhouse') return greenhouseAdapter;
-  if (ats === 'lever') return leverAdapter;
-  if (ats === 'ashby') return ashbyAdapter;
-  return undefined;
-}
 
 export interface ApplyDeps {
   db: Db;
@@ -121,6 +54,28 @@ export interface ApplyDeps {
   criteria?: Criteria;
   /** `preferences.md`, so logistics answers follow Kris's own words. */
   preferences?: string;
+  /** Connects to Kris's Chrome. Tests pass a fake. */
+  connect?: (endpoint?: string) => Promise<Browser>;
+}
+
+/** The plan for one job's application, read from the database. No browser, no model. */
+export function applyPlanFor(db: Db, clock: Clock, jobId: number): ApplyPlan {
+  const detail = scoresRepo(db, clock).detail(jobId);
+  if (!detail) throw new ApplyError(`job ${jobId} not found`);
+  const app = applicationsRepo(db, clock).findByJob(jobId);
+  return planApply({
+    job: detail.job,
+    company: detail.company,
+    employerLink: app?.applyUrl ?? null,
+    boardToken: boardTokenOf(db, detail.job.companyId),
+  });
+}
+
+function boardTokenOf(db: Db, companyId: number): string | null {
+  return (
+    db.select({ token: companies.token }).from(companies).where(eq(companies.id, companyId)).get()
+      ?.token ?? null
+  );
 }
 
 export interface ApplyOptions {
@@ -144,10 +99,14 @@ export interface ApplyResult {
   applicationId: number;
   title: string;
   company: string;
-  /** Present when a form was filled (not a fallback). */
+  /** Present when a form was filled (not a fallback), or when the page had no form. */
   report?: FillReport;
   /** Present for a fallback: the prepared answers to copy-paste. */
   answers?: PreparedAnswerView[];
+  /** Set when the plan stopped before Chrome: the link is on a job board. */
+  skipped?: { host: string; publisher: string | null };
+  /** Set when the page opened but had no application form; the tab stays open. */
+  noForm?: { host: string; reason: string };
 }
 
 function humanizeKey(key: string): string {
@@ -170,25 +129,48 @@ export async function runApply(deps: ApplyDeps, options: ApplyOptions): Promise<
     throw new ApplyError(`no application for job ${options.jobId}; run \`prep\` first`);
   }
 
-  const boardToken =
-    db
-      .select({ token: companies.token })
-      .from(companies)
-      .where(eq(companies.id, detail.job.companyId))
-      .get()?.token ?? null;
-  const applyUrl = resolveApplyUrl({
-    ats: detail.job.ats,
-    url: detail.job.url,
-    applyUrl: detail.job.applyUrl,
-    externalId: detail.job.externalId,
-    boardToken,
+  const plan = planApply({
+    job: detail.job,
+    company: detail.company,
+    employerLink: app.applyUrl,
+    boardToken: boardTokenOf(db, detail.job.companyId),
   });
   const answers = app.answers ?? {};
-  const specialized = selectAdapter(detail.job.ats);
-  const adapter = specialized ?? genericAdapter;
+
+  // A job board's page is never opened for filling: no browser, no model,
+  // no fill report. Only the counts are recorded (D184).
+  if (plan.kind === 'stop') {
+    const stored = detail.job.applyOptions ?? [];
+    eventsRepo(db, clock).append({
+      type: 'fill_skipped',
+      jobId: options.jobId,
+      applicationId: app.id,
+      payload: {
+        host: plan.host,
+        options: stored.length,
+        direct: stored.filter((o) => o.direct).length,
+      },
+    });
+    log.info({ jobId: options.jobId, host: plan.host }, 'apply: job-board link, not opened');
+    return {
+      ok: true,
+      fallback: false,
+      ats: detail.job.ats,
+      applyUrl: plan.url,
+      applicationId: app.id,
+      title: detail.job.title,
+      company: detail.company,
+      skipped: { host: plan.host, publisher: plan.publisher },
+    };
+  }
+
+  const applyUrl = plan.url;
+  const adapter = selectAdapter(detail.job.ats, applyUrl);
+  const byHost = adapterForHost(applyUrl) !== undefined;
+  const drafts = (FILLABLE_ATS as readonly string[]).includes(adapter.ats);
 
   const jobText = renderJobText(detail.job, detail.company, FORM_ANSWERS_JOB_CHAR_CAP);
-  const browser = await connectChrome(options.endpoint);
+  const browser = await (deps.connect ?? connectChrome)(options.endpoint);
   try {
     const page = await openApplyPage(browser, applyUrl);
     const fillDeps = {
@@ -198,12 +180,12 @@ export async function runApply(deps: ApplyDeps, options: ApplyOptions): Promise<
       coverNote: app.coverNote,
       coverLetterAvailable: isUsable(app.coverNote) || existsSync(PROVIDED_COVER_LETTER),
       coverLetterPdf: () => coverLetterPdf(deps.profile, app),
-      draftAnswers: specialized ? draftAndSave(deps, app, jobText) : undefined,
-      mapFields: specialized ? undefined : mapAndSave(deps, app, jobText),
-      reportAts: detail.job.ats,
+      draftAnswers: drafts ? draftAndSave(deps, app, jobText) : undefined,
+      mapFields: drafts ? undefined : mapAndSave(deps, app, jobText),
+      reportAts: byHost ? adapter.ats : detail.job.ats,
     };
     const report =
-      detail.job.ats === 'smartrecruiters'
+      adapter.ats === 'smartrecruiters'
         ? await fillSmartRecruitersForm(page, fillDeps, applyUrl)
         : await fillForm(page, adapter, fillDeps, applyUrl);
     const empty =
@@ -224,6 +206,7 @@ export async function runApply(deps: ApplyDeps, options: ApplyOptions): Promise<
         skipped_eeo: report.skipped_eeo.length,
         self_identification: report.self_identification.length,
         resume_attached: report.resumeAttached,
+        ...(report.noForm ? { no_form: true } : {}),
       },
     });
     log.info(
@@ -237,6 +220,20 @@ export async function runApply(deps: ApplyDeps, options: ApplyOptions): Promise<
       'apply: form filled (not submitted)',
     );
 
+    if (report.noForm) {
+      return {
+        ok: true,
+        fallback: true,
+        ats: report.ats,
+        applyUrl,
+        applicationId: app.id,
+        title: detail.job.title,
+        company: detail.company,
+        report,
+        answers: answerViews(answers),
+        noForm: { host: urlHost(applyUrl) ?? applyUrl, reason: report.noForm.reason },
+      };
+    }
     return {
       ok: true,
       fallback: empty,

@@ -13,6 +13,11 @@ export interface PaletteItem {
   label: string;
   /** Extra words to match on, e.g. the company for a job. */
   keywords?: string[];
+  /**
+   * The string ⌘K scores. When set, it replaces the label and keywords, so an
+   * industry row can carry an alias marker the jobs do not.
+   */
+  match?: string;
   hint?: string;
   icon?: React.ReactNode;
   shortcut?: string[];
@@ -29,12 +34,15 @@ export function CommandPalette({
   open,
   onOpenChange,
   groups,
+  filter,
   placeholder = "Search jobs and companies, or type a command",
   brand = "JobHacker",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   groups: PaletteGroup[];
+  /** How a query scores an item. Absent: cmdk's own matching. */
+  filter?: (value: string, search: string) => number;
   placeholder?: string;
   brand?: string;
 }) {
@@ -68,6 +76,7 @@ export function CommandPalette({
         <DialogDescription className="sr-only">Type to filter jobs, views and actions.</DialogDescription>
         <Command
           loop
+          {...(filter ? { filter } : {})}
           value={value}
           onValueChange={(v) => {
             setValue(v);
@@ -99,7 +108,7 @@ export function CommandPalette({
                 {g.items.map((it) => (
                   <Command.Item
                     key={it.id}
-                    value={`${it.label} ${it.keywords?.join(" ") ?? ""} ${it.id}`}
+                    value={it.match ?? `${it.label} ${it.keywords?.join(" ") ?? ""} ${it.id}`}
                     onSelect={() => {
                       onOpenChange(false);
                       it.onSelect();

@@ -144,6 +144,19 @@ export const placeSchema = z
   .strict();
 export type PlaceConfig = z.infer<typeof placeSchema>;
 
+/**
+ * One industry Kris wants to browse (J26). A view filter, like a place: a
+ * company is in at most one, or none. Aliases are the ⌘K queries that open it.
+ */
+export const industrySchema = z
+  .object({
+    id: z.string().regex(/^[a-z][a-z0-9_-]*$/, 'must be a lowercase id, like "games"'),
+    label: z.string().min(1),
+    aliases: z.array(z.string().min(1)).default([]),
+  })
+  .strict();
+export type IndustryConfig = z.infer<typeof industrySchema>;
+
 export const criteriaSchema = z
   .object({
     gates: z
@@ -184,6 +197,16 @@ export const criteriaSchema = z
       .optional(),
     /** The areas the Where filter and scoring start from. Absent or empty: anywhere. */
     where_default: z.array(z.string().min(1)).optional(),
+    /**
+     * Industries he can filter the queue by (J26). A view filter, never a gate.
+     * Absent on older files: no industry filter.
+     */
+    industries: z.array(industrySchema).optional(),
+    /**
+     * Companies he most wants to work for (J27). A rank-time bump, never a gate.
+     * Absent on older files: no bump.
+     */
+    target_companies: z.array(z.string().min(1)).optional(),
   })
   .strict()
   .superRefine((criteria, ctx) => {
@@ -212,6 +235,30 @@ export const criteriaSchema = z
           message: `"${area}" is not a place id or "${REMOTE_AREA}"`,
           path: ['where_default', i],
         });
+      }
+    }
+    const industryIds = new Set<string>();
+    const aliases = new Map<string, string>();
+    for (const [i, industry] of (criteria.industries ?? []).entries()) {
+      if (industryIds.has(industry.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate industry id "${industry.id}"`,
+          path: ['industries', i, 'id'],
+        });
+      }
+      industryIds.add(industry.id);
+      const words = [industry.id, ...industry.aliases.map((alias) => alias.trim().toLowerCase())];
+      for (const word of words) {
+        const owner = aliases.get(word);
+        if (owner && owner !== industry.id) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `"${word}" is already an alias of "${owner}"`,
+            path: ['industries', i, 'aliases'],
+          });
+        }
+        aliases.set(word, industry.id);
       }
     }
   });

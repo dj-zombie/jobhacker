@@ -1,5 +1,6 @@
-import { type ApplyResult, runApply } from '../../core/apply/apply.js';
+import { type ApplyResult, applyPlanFor, runApply } from '../../core/apply/apply.js';
 import { BrowserError } from '../../core/apply/browser.js';
+import type { ApplyPlan } from '../../core/apply/plan.js';
 import { ApplyError } from '../../core/apply/types.js';
 import { ConfigError, loadAllConfig } from '../../core/config/load.js';
 import { createDb } from '../../core/db/client.js';
@@ -7,6 +8,7 @@ import { runsRepo } from '../../core/db/repo/runs.js';
 import { createAnthropicLlm } from '../../core/llm/anthropic.js';
 import { LlmError } from '../../core/llm/types.js';
 import { systemClock } from '../../core/util/clock.js';
+import { urlHost } from '../../core/util/host.js';
 import { createLogger } from '../../core/util/logger.js';
 
 /**
@@ -17,7 +19,7 @@ import { createLogger } from '../../core/util/logger.js';
  * fill report (FR-8). It never submits. Prep must have been run for the job
  * first. Mirrors `prep`: wrapped in a `fill` run for bookkeeping.
  */
-export async function applyCommand(jobIdArg: string): Promise<void> {
+export async function applyCommand(jobIdArg: string, opts: { plan?: boolean }): Promise<void> {
   const jobId = Number(jobIdArg);
   if (!Number.isInteger(jobId) || jobId <= 0) {
     console.error('apply FAILED\n\n<jobId> must be a positive integer');
@@ -27,6 +29,12 @@ export async function applyCommand(jobIdArg: string): Promise<void> {
 
   let sqlite: ReturnType<typeof createDb>['sqlite'] | undefined;
   try {
+    if (opts.plan) {
+      const opened = createDb();
+      sqlite = opened.sqlite;
+      console.log(formatPlan(jobId, applyPlanFor(opened.db, systemClock, jobId)));
+      return;
+    }
     const config = loadAllConfig();
     const opened = createDb();
     sqlite = opened.sqlite;
@@ -86,7 +94,42 @@ export async function applyCommand(jobIdArg: string): Promise<void> {
   }
 }
 
+/** `apply <jobId> --plan`: what Open & fill would do, read from the database only. */
+export function formatPlan(jobId: number, plan: ApplyPlan): string {
+  if (plan.kind === 'open') {
+    const from = plan.from === 'employer' ? ' (the employer link on the application)' : '';
+    return `plan job ${jobId}: open ${urlHost(plan.url) ?? plan.url} with ${plan.adapter}${from}\n  ${plan.url}`;
+  }
+  const lines = [
+    `plan job ${jobId}: stop, ${plan.host} is a job board${plan.publisher ? ` (${plan.publisher})` : ''}`,
+  ];
+  if (plan.options.length === 0) lines.push("  no stored link on the employer's own site");
+  for (const o of plan.options) {
+    lines.push(`  - ${o.publisher} · ${o.host}${o.direct ? ' (direct)' : ''}`);
+  }
+  if (plan.otherLinks > 0) {
+    lines.push(
+      `  ${plan.otherLinks} other ${plan.otherLinks === 1 ? 'link' : 'links'} not shown: job boards, or sites not tied to the employer`,
+    );
+  }
+  return lines.join('\n');
+}
+
 function formatApplySummary(runId: number, r: ApplyResult): string {
+  if (r.skipped) {
+    return [
+      `apply run ${runId}: nothing to fill on ${r.skipped.host}, a job board. Chrome was not opened.`,
+      `  ${r.title} @ ${r.company} (application ${r.applicationId})`,
+      "  Paste the employer's own application link in the workspace, then run apply again.",
+    ].join('\n');
+  }
+  if (r.noForm) {
+    return [
+      `apply run ${runId}: no application form on ${r.noForm.host} (${r.noForm.reason}). Nothing was filled.`,
+      `  ${r.title} @ ${r.company} (application ${r.applicationId})`,
+      '  The tab is still open in Chrome.',
+    ].join('\n');
+  }
   if (r.fallback) {
     const lines = [
       `apply run ${runId}: fallback (no fillable fields on this ${r.ats} page)`,

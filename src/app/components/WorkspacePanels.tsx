@@ -18,6 +18,7 @@ import {
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import {
+  draftAnswerAction,
   regenerateAnswersAction,
   regenerateCoverAction,
   regenerateResumeAction,
@@ -25,6 +26,7 @@ import {
   setFollowUpDateAction,
   setNotesAction,
 } from '../lib/actions.js';
+import { play } from '../lib/sfx.js';
 import type { CopyRow, WorkspaceAnswer } from '../lib/workspace-types.js';
 
 /** The workspace's tab bodies (J7). Each edit is explicit: an unsaved marker, then Save. */
@@ -33,6 +35,7 @@ const FIELD =
   'w-full rounded-lg border border-line-2 bg-surface-1 px-3 text-sm text-fg outline-none transition-colors placeholder:text-fg-4 focus:border-brand/60 focus:bg-surface-2';
 
 function failed(title: string, error?: string) {
+  play('error');
   toast(title, { description: error, icon: <TriangleAlert className="text-danger" /> });
 }
 
@@ -313,6 +316,11 @@ function answerMap(answers: WorkspaceAnswer[]): Record<string, string> {
 const sameAnswers = (a: Record<string, string>, b: Record<string, string>) =>
   JSON.stringify(a) === JSON.stringify(b);
 
+/** What he wrote in an answer box, without any `[NEEDS INPUT: …]` marker. */
+function roughAnswer(value: string): string {
+  return value.replace(/\[NEEDS INPUT[^\]]*\]/gi, ' ').trim();
+}
+
 export function AnswersEditor({
   jobId,
   answers,
@@ -329,7 +337,8 @@ export function AnswersEditor({
   const router = useRouter();
   const saved = React.useMemo(() => answerMap(answers), [answers]);
   const draft = useDraft(saved, sameAnswers);
-  const [busy, setBusy] = React.useState<'save' | 'reload' | null>(null);
+  const [notes, setNotes] = React.useState<Record<string, string>>({});
+  const [busy, setBusy] = React.useState<null | 'save' | 'reload' | `draft:${string}`>(null);
   const refs = React.useRef(new Map<string, HTMLInputElement | HTMLTextAreaElement>());
 
   React.useEffect(() => {
@@ -369,6 +378,25 @@ export function AnswersEditor({
     router.refresh();
   };
 
+  const draftAnswer = async (key: string, label: string) => {
+    const note = (notes[key] ?? '').trim();
+    const rough = roughAnswer(draft.value[key] ?? '');
+    if (!note && !rough) return;
+    setBusy(`draft:${key}`);
+    const res = await draftAnswerAction(jobId, label, note, rough);
+    setBusy(null);
+    if (!res.ok || res.answer === undefined) {
+      return failed("Couldn't draft an answer", res.error);
+    }
+    set(key, res.answer);
+    refs.current.get(key)?.focus();
+    if (res.needsInput) {
+      toast('Still needs a fact from you', { description: 'The field says what is missing.' });
+      return;
+    }
+    toast('Drafted. Read it, then save.');
+  };
+
   const bind = (key: string) => (el: HTMLInputElement | HTMLTextAreaElement | null) => {
     if (el) refs.current.set(key, el);
     else refs.current.delete(key);
@@ -400,28 +428,59 @@ export function AnswersEditor({
       </section>
       <section>
         <h3 className="mb-2 text-sm font-semibold text-fg">Questions on this job's form</h3>
+        <p className="mb-3 text-xs leading-relaxed text-fg-3">
+          Write a rough answer, a note on what to say, or both, then Draft. It rewrites the answer
+          from your words and your profile. A link in the note is read. Read the result, then save.
+        </p>
         <div className="space-y-3">
           {questions.map((a) => {
             const value = draft.value[a.key] ?? '';
+            const drafting = busy === `draft:${a.key}`;
             return (
-              <label key={a.key} className="block">
-                <span className="mb-1 flex items-center gap-2 text-xs text-fg-3">
-                  {a.label}
-                  {reviewKeys.has(a.key) ? (
-                    <span className="rounded-full bg-maybe-wash px-1.5 text-2xs text-maybe">
-                      Drafted
-                    </span>
-                  ) : null}
-                </span>
-                <textarea
-                  ref={bind(a.key)}
-                  value={value}
-                  onChange={(e) => set(a.key, e.target.value)}
-                  placeholder="No answer yet. Leave blank to skip this optional question."
-                  rows={value.length > 120 ? 6 : 2}
-                  className={cn(FIELD, 'resize-y py-2 leading-relaxed')}
-                />
-              </label>
+              <div key={a.key}>
+                <label className="block">
+                  <span className="mb-1 flex items-center gap-2 text-xs text-fg-3">
+                    {a.label}
+                    {reviewKeys.has(a.key) ? (
+                      <span className="rounded-full bg-maybe-wash px-1.5 text-2xs text-maybe">
+                        Drafted
+                      </span>
+                    ) : null}
+                  </span>
+                  <textarea
+                    ref={bind(a.key)}
+                    value={value}
+                    onChange={(e) => set(a.key, e.target.value)}
+                    placeholder="No answer yet. Leave blank to skip this optional question."
+                    rows={value.length > 120 ? 6 : 2}
+                    className={cn(FIELD, 'resize-y py-2 leading-relaxed')}
+                  />
+                </label>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <input
+                    value={notes[a.key] ?? ''}
+                    onChange={(e) => setNotes((prev) => ({ ...prev, [a.key]: e.target.value }))}
+                    maxLength={800}
+                    placeholder="Note: what to say, the tone, or a link to use"
+                    aria-label={`Note for ${a.label}`}
+                    className={cn(FIELD, 'h-9 min-w-0 flex-1')}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={
+                      busy !== null ||
+                      ((notes[a.key] ?? '').trim() === '' && roughAnswer(value) === '')
+                    }
+                    onClick={() => void draftAnswer(a.key, a.label)}
+                  >
+                    <RefreshCw className={cn(drafting && 'animate-spin')} />
+                    Draft
+                  </Button>
+                </div>
+              </div>
             );
           })}
           {questions.length === 0 ? (

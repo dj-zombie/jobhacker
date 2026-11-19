@@ -4,6 +4,7 @@ import { LOGO_TILE_PX } from './logo-url.js';
 import {
   companyHeaderLogos,
   companyLogoSrc,
+  companySiteHref,
   pageOrigins,
   registrableHost,
   sameSiteIconUrl,
@@ -19,6 +20,21 @@ const PTOWN = `
 `;
 
 describe('site icons', () => {
+  it('links a stored domain to that company site, and nothing else', () => {
+    expect(companySiteHref('Linear.app')).toEqual({
+      host: 'linear.app',
+      href: 'https://linear.app/',
+    });
+    expect(companySiteHref('https://www.ptown.tech/jobs')).toEqual({
+      host: 'ptown.tech',
+      href: 'https://ptown.tech/',
+    });
+    expect(companySiteHref(null)).toBeNull();
+    expect(companySiteHref('')).toBeNull();
+    expect(companySiteHref('not a domain')).toBeNull();
+    expect(companySiteHref('javascript:alert(1)')).toBeNull();
+  });
+
   it('agrees with registrableDomain', () => {
     for (const value of ['https://www.ptown.tech/', 'careers.acme.co.uk', 'not a domain']) {
       expect(registrableHost(value)).toBe(registrableDomain(value));

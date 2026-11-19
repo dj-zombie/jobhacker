@@ -47,6 +47,10 @@ export function companiesRepo(db: Db, clock: Clock) {
         .get();
     },
 
+    byId(id: number): Company | undefined {
+      return db.select().from(companies).where(eq(companies.id, id)).get();
+    },
+
     /**
      * Set `active` on one board. Returns false when that ats + token is not in
      * the table. Jobs are left as they are.

@@ -4,10 +4,17 @@ import { areasRepo } from '../db/repo/areas.js';
 import { scoresRepo } from '../db/repo/scores.js';
 import type { GateResult, Job, JobStatus, ScoreState, Verdict } from '../db/schema.js';
 import type { Clock } from '../util/clock.js';
+import { companyOnList } from '../util/company-match.js';
 import { areaLabel, classifyJob, placesConfigFrom, sortAreas } from './areas.js';
 import { ageInDays } from './gate.js';
 import { type PrescoreBreakdown, buildPrescorer, prescoreCorpus } from './prescore.js';
-import { type CriticalCap, computeRank, contributions, verdictFor } from './rank.js';
+import {
+  type CriticalCap,
+  type TargetBump,
+  computeRank,
+  contributions,
+  verdictFor,
+} from './rank.js';
 import { isStale } from './ranked.js';
 import type { ScoringKey } from './score.js';
 
@@ -50,6 +57,8 @@ export interface WhyReport {
     rubricVersion: string;
     scoredAt: string;
     stale: boolean;
+    /** The listed spelling, when this company is on the list and the job is scored. */
+    target: (TargetBump & { name: string }) | null;
   } | null;
   /** A v1 single-number score for this text, kept for history but never ranked. */
   legacyScore: { score: number; verdict: Verdict } | null;
@@ -95,7 +104,10 @@ export function explainJob(
   let legacyScore: WhyReport['legacyScore'] = null;
   if (row?.dimensions) {
     const dims = row.dimensions;
-    const live = computeRank(dims, criteria.weights, criteria.bands);
+    const listed = companyOnList(company, criteria.target_companies ?? []);
+    const live = computeRank(dims, criteria.weights, criteria.bands, {
+      target: listed !== null,
+    });
     const parts = contributions(dims, criteria.weights).map((c) => ({
       ...c,
       reason: dims[c.dimension].reason,
@@ -113,6 +125,7 @@ export function explainJob(
       rubricVersion: row.rubricVersion,
       scoredAt: row.createdAt,
       stale: isStale(row, options.current),
+      target: live.target && listed ? { points: live.target.points, name: listed } : null,
     };
   } else if (row) {
     legacyScore = { score: row.score, verdict: row.verdict };
@@ -236,6 +249,7 @@ export function renderWhy(r: WhyReport): string {
   lines.push(
     `score:     ${s.score ?? '—'} → ${s.verdict}${s.stale ? '  (stale: scored with older preferences/profile/rubric)' : ''}`,
     `base:      ${s.baseScore ?? '—'} = Σ(weight × dimension) / ${s.knownWeight} × 20`,
+    ...(s.target ? [`target:    +${s.target.points} (${s.target.name})`] : []),
     ...(s.cap
       ? [
           `cap:       critical ${s.cap.dimensions.join(', ')} = ${s.cap.level}; maximum score ${s.cap.maxScore}`,

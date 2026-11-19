@@ -2,6 +2,7 @@ import { EmptyState, PageHeader } from '@/components/jobhacker';
 import { Briefcase, TriangleAlert } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { MobileNavButton } from '../../../components/app-shell.js';
+import { industriesOf } from '../../../core/pipeline/industry.js';
 import { JobDeepLink } from '../../components/JobDeepLink.js';
 import { eventEntries } from '../../lib/activity.js';
 import {
@@ -53,6 +54,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     <JobDeepLink
       detail={detail}
       places={placesOf(config.criteria)}
+      industries={(industriesOf(config.criteria) ?? []).map((industry) => ({
+        id: industry.id,
+        label: industry.label,
+      }))}
       ranking={{ weights: config.criteria.weights, bands: config.criteria.bands }}
       nowMs={Date.now()}
       events={events}

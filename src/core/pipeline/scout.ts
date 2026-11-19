@@ -10,7 +10,8 @@ import {
 import type { Db } from '../db/client.js';
 import { companiesRepo } from '../db/repo/companies.js';
 import { jobsRepo } from '../db/repo/jobs.js';
-import { runsRepo } from '../db/repo/runs.js';
+import { SCOUT_HEARTBEAT_MS, runsRepo } from '../db/repo/runs.js';
+import type { Company } from '../db/schema.js';
 import type { LlmClient } from '../llm/types.js';
 import { addCredits, callsThisMonth, chargeCall, creditsThisMonth } from '../sources/budget.js';
 import { type ProbeContext, readCache, writeCache } from '../sources/discover.js';
@@ -24,6 +25,7 @@ import {
 import { hnAdapter } from '../sources/hn.js';
 import { jobspipeAdapter } from '../sources/jobspipe.js';
 import { jsearchAdapter } from '../sources/jsearch.js';
+import { isPlaceholderEmployer } from '../sources/placeholder-employers.js';
 import { generateQueries, jobspipeQueries, queriesForRun } from '../sources/query-gen.js';
 import { loadBoard } from '../sources/registry.js';
 import { type Relocation, goneStatus, lookedLine } from '../sources/relocate.js';
@@ -42,7 +44,7 @@ import { applyPrescores } from './prescore.js';
 import { ScoreBusyError, liveScoringRun } from './score-run.js';
 import { type ScoreStats, scoreNewJobs } from './score.js';
 import { type ScoutProgress, parseScoutProgress } from './scout-progress.js';
-import { type UpkeepDeps, relocateBoards } from './upkeep.js';
+import { type UpkeepDeps, optionUrls, relocateBoards } from './upkeep.js';
 
 /**
  * Scout (FR-3, ARCHITECTURE § Flows). Fetches each active board, upserts
@@ -195,6 +197,29 @@ export async function runRefresh(deps: ScoutDeps): Promise<ScoutResult> {
   return runScout(rest);
 }
 
+/**
+ * Rewrite `beatAt` on an open scout until `stop` is called. A tick after the run
+ * has finished does not change the row. A tick after the database has closed is ignored.
+ */
+export function pulseScoutRun(
+  db: Db,
+  clock: Clock,
+  runId: number,
+  current: () => ScoutProgress,
+  intervalMs = SCOUT_HEARTBEAT_MS,
+): () => void {
+  const runs = runsRepo(db, clock);
+  const pulse = setInterval(() => {
+    try {
+      runs.progress(runId, { progress: current(), beatAt: clock.now() });
+    } catch {
+      // The scout records its own failure. A beat after the database closes is noise.
+    }
+  }, intervalMs);
+  if (typeof pulse === 'object' && pulse !== null && 'unref' in pulse) pulse.unref();
+  return () => clearInterval(pulse);
+}
+
 export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
   const { db, http, clock, log, companies, criteria } = deps;
   const runs = runsRepo(db, clock);
@@ -205,9 +230,12 @@ export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
   const touches = new Map<string, DomainTouch>();
   const harvested: HarvestSource[] = [];
   const gone: Array<{ ats: string; token: string; name: string }> = [];
+  let beatProgress: ScoutProgress = { done: 0, total: 0, found: 0, unit: 'Board' };
   const report = (progress: ScoutProgress) => {
+    beatProgress = progress;
     runs.progress(runId, { progress, beatAt: clock.now() });
   };
+  const stopPulse = pulseScoutRun(db, clock, runId, () => beatProgress);
 
   try {
     const boardTotal = companies.filter((company) => company.active).length;
@@ -348,6 +376,10 @@ export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
       stats.gates = applyGates(db, criteria.gates, clock.nowMs());
       stats.prescored = applyPrescores(db, deps.preferences);
       if (deps.scoring) {
+        // A scout never raises the cap (D177). An absent limit is the config cap.
+        // A limit passed here can only lower it.
+        const asked = deps.scoring.limit;
+        const scoutCap = criteria.budget.max_new_scores_per_run;
         const { stats: scoreStats } = await scoreNewJobs({
           db,
           llm: deps.scoring.llm,
@@ -356,7 +388,7 @@ export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
           criteria,
           profile: deps.scoring.profile,
           preferences: deps.preferences,
-          limit: deps.scoring.limit,
+          ...(asked != null ? { limit: Math.min(Math.max(0, Math.floor(asked)), scoutCap) } : {}),
           onProgress: (progress) => {
             report({
               done: progress.done,
@@ -385,6 +417,8 @@ export async function runScout(deps: ScoutDeps): Promise<ScoutResult> {
       // The original failure is what the caller needs.
     }
     throw err;
+  } finally {
+    stopPulse();
   }
 }
 
@@ -791,16 +825,23 @@ function ingestHits(
 ): void {
   const quality = source === 'hn' ? 'low' : 'medium';
   for (const hit of hits) {
+    const posting = hit.posting;
     const token = slugify(hit.companyName);
     const existed = deps.companies.get(source, token);
-    const company = deps.companies.upsert({
-      name: hit.companyName,
-      ats: source,
-      token,
-      active: true,
-      tags: ['search'],
-    });
-    const posting = hit.posting;
+    // A placeholder ("Remote") never replaces the employer `search:employers` read from the posting.
+    const named = isPlaceholderEmployer(hit.companyName)
+      ? storedEmployer(deps, posting.ats, posting.externalId)
+      : undefined;
+    const company =
+      named ??
+      deps.companies.upsert({
+        name: hit.companyName,
+        ats: source,
+        token,
+        active: true,
+        tags: ['search'],
+      });
+    const companyName = company.name;
     noteDomainTouch(touches, hit.companyName, !existed, posting.companyWebsite);
     const result = deps.jobs.upsert(
       {
@@ -813,13 +854,14 @@ function ingestHits(
         employmentType: posting.employmentType,
         url: posting.url,
         applyUrl: posting.applyUrl,
+        applyOptions: posting.applyOptions,
         descriptionText: posting.descriptionText,
         compMin: posting.compMin,
         compMax: posting.compMax,
         compCurrency: posting.compCurrency,
         postedAt: posting.postedAt,
         contentHash: contentHash(posting.title, posting.descriptionText),
-        dedupeKey: dedupeKey(hit.companyName, posting.title, posting.locationRaw ?? ''),
+        dedupeKey: dedupeKey(companyName, posting.title, posting.locationRaw ?? ''),
         sourceKind: 'search',
         sourceName: source,
         sourceQuality: quality,
@@ -830,10 +872,26 @@ function ingestHits(
     if (result.action === 'inserted') deps.stats.inserted += 1;
     else deps.stats.updated += 1;
     deps.harvested.push({
-      companyName: hit.companyName,
-      texts: [posting.url, posting.applyUrl, posting.descriptionText],
+      companyName,
+      texts: [
+        posting.url,
+        posting.applyUrl,
+        posting.descriptionText,
+        ...optionUrls(posting.applyOptions),
+      ],
     });
   }
+}
+
+/** The stored job's company, when it already has a real employer's name. */
+function storedEmployer(
+  deps: { jobs: ReturnType<typeof jobsRepo>; companies: ReturnType<typeof companiesRepo> },
+  ats: Ats,
+  externalId: string,
+): Company | undefined {
+  const stored = deps.jobs.find(ats, externalId);
+  const company = stored ? deps.companies.byId(stored.companyId) : undefined;
+  return company && !isPlaceholderEmployer(company.name) ? company : undefined;
 }
 
 function emptyStats(): ScoutStats {

@@ -9,8 +9,10 @@ import { ashbyAdapter } from './adapters/ashby.js';
 import { genericAdapter } from './adapters/generic.js';
 import { greenhouseAdapter } from './adapters/greenhouse.js';
 import { leverAdapter } from './adapters/lever.js';
+import { smartRecruitersAdapter } from './adapters/smartrecruiters.js';
 import { resolveChrome } from './browser.js';
 import { fillForm } from './fill.js';
+import { selectAdapter } from './plan.js';
 import { SafePage, SubmitRefusedError } from './safe-page.js';
 import type { FormAdapter, OpenQuestion } from './types.js';
 
@@ -501,6 +503,115 @@ d('fillForm against saved forms (headless Chrome)', { timeout: 60_000 }, () => {
     await page.close();
   });
 
+  it('a JSearch job on an Ashby URL fills through ashbyAdapter, the same as an Ashby job', async () => {
+    const url = 'https://jobs.ashbyhq.com/acme/1/application';
+    const adapter = selectAdapter('jsearch', url);
+    expect(adapter).toBe(ashbyAdapter);
+    const counts: { filled: number; unfilled: number }[] = [];
+    for (const chosen of [adapter, selectAdapter('ashby', url)]) {
+      const page = await openFixture('ashby-application.html');
+      const report = await fillForm(
+        new SafePage(page),
+        chosen,
+        {
+          profile: PROFILE,
+          answers: ANSWERS,
+          resumePdfPath: resumePath,
+          coverNote: 'Dear Acme team.',
+          draftAnswers: async () => ASHBY_DRAFTS,
+          reportAts: chosen.ats,
+        },
+        url,
+      );
+      expect(report.ats).toBe('ashby');
+      expect(await submits(page)).toBe(0);
+      expect(
+        await page.evaluate(() => (window as unknown as { __ashbySubmits: number }).__ashbySubmits),
+      ).toBe(0);
+      counts.push({ filled: report.filled.length, unfilled: report.unfilled.length });
+      await page.close();
+    }
+    expect(counts[0]?.filled).toBeGreaterThan(0);
+    expect(counts[0]).toEqual(counts[1]);
+  });
+
+  describe('no application form (J29): a generic page without name and email fills nothing', () => {
+    const NO_FORM = [
+      ['aggregator-uploader.html', 'no name or email field'],
+      ['aggregator-email-finder.html', 'no name or email field'],
+      ['aggregator-search.html', 'no name or email field'],
+      ['aggregator-signup.html', 'no name field'],
+    ] as const;
+    for (const [file, reason] of NO_FORM) {
+      it(`${file}: 0 writes, 0 uploads, noForm, no model call`, async () => {
+        const page = await openFixture(file);
+        await page.evaluate(() => {
+          const w = window as unknown as { __writes?: number };
+          w.__writes = 0;
+          for (const type of ['input', 'change']) {
+            document.addEventListener(
+              type,
+              () => {
+                w.__writes = (w.__writes ?? 0) + 1;
+              },
+              true,
+            );
+          }
+        });
+        let mapped = 0;
+        let drafted = 0;
+        const report = await fillForm(
+          new SafePage(page),
+          genericAdapter,
+          {
+            profile: PROFILE,
+            answers: ANSWERS,
+            resumePdfPath: resumePath,
+            coverNote: 'Dear team.',
+            mapFields: async () => {
+              mapped++;
+              return new Map();
+            },
+            draftAnswers: async () => {
+              drafted++;
+              return {};
+            },
+          },
+          'https://jobs.northwind.example/job/1',
+        );
+        expect(report.noForm).toEqual({ reason });
+        expect(report.filled).toEqual([]);
+        expect(report.unfilled).toEqual([]);
+        expect(report.skipped_eeo).toEqual([]);
+        expect(report.self_identification).toEqual([]);
+        expect(report.resumeAttached).toBe(false);
+        expect(mapped).toBe(0);
+        expect(drafted).toBe(0);
+        const state = await page.evaluate(() => ({
+          writes: (window as unknown as { __writes?: number }).__writes ?? 0,
+          values: [...document.querySelectorAll('input:not([type=file]), textarea')].map(
+            (el) => (el as HTMLInputElement).value,
+          ),
+          files: [...document.querySelectorAll('input[type=file]')].reduce(
+            (n, el) => n + ((el as HTMLInputElement).files?.length ?? 0),
+            0,
+          ),
+          outlined: [...document.querySelectorAll('input, textarea, select')].filter(
+            (el) => (el as HTMLElement).style.outline !== '',
+          ).length,
+        }));
+        expect(state).toEqual({
+          writes: 0,
+          values: state.values.map(() => ''),
+          files: 0,
+          outlined: 0,
+        });
+        expect(await submits(page)).toBe(0);
+        await page.close();
+      });
+    }
+  });
+
   it('greenhouse — location typeahead whose menu opens only when the control is pressed', async () => {
     const { page, report } = await fill(
       'greenhouse-location.html',
@@ -550,7 +661,7 @@ d('fillForm against saved forms (headless Chrome)', { timeout: 60_000 }, () => {
     );
     const report = await fillForm(
       new SafePage(page),
-      genericAdapter,
+      smartRecruitersAdapter,
       {
         profile: {
           ...PROFILE,
@@ -565,7 +676,7 @@ d('fillForm against saved forms (headless Chrome)', { timeout: 60_000 }, () => {
         answers: ANSWERS,
         resumePdfPath: resumePath,
       },
-      'https://example.com/apply',
+      'https://jobs.smartrecruiters.com/Fabrikam/1-engineer',
     );
     expect(await page.inputValue('#gender')).toBe('Man');
     expect(report.self_identification).toContainEqual({ field: 'Gender identity', value: 'Man' });

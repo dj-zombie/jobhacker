@@ -8,10 +8,11 @@ import type {
   TriageState,
 } from '@/components/jobhacker';
 import { LOGO_TILE_PX } from '../../core/brand/logo-url.js';
-import { companyHeaderLogos, companyLogoSrc } from '../../core/brand/site-icon.js';
+import { companyHeaderLogos, companyLogoSrc, companySiteHref } from '../../core/brand/site-icon.js';
 import { type Bands, DIMENSIONS, type Dimension, type Weights } from '../../core/config/schemas.js';
+import type { IndustryStatus } from '../../core/db/schema.js';
 import { computeRank, verdictFor } from '../../core/pipeline/rank.js';
-import type { ScoreRunState } from '../../core/pipeline/score-run.js';
+import type { ScorePace, ScoreRunState } from '../../core/pipeline/score-run.js';
 import { type DimScores, type JobStatus, toDimensions } from '../../core/pipeline/triage-view.js';
 import type { ScoringSummary } from '../../core/pipeline/triage.js';
 
@@ -38,6 +39,11 @@ export interface TriageRowData {
   closed: boolean;
   /** Kris's areas this job is in (`job_areas`). */
   areas: string[];
+  companyId: number;
+  /** Suggested, confirmed, or cleared industry. Null when none has been named. */
+  industryId: string | null;
+  industryStatus: IndustryStatus | null;
+  industryReason: string | null;
   /** Scores under the current cache key; null while unscored or stale. */
   dims: DimScores | null;
   /** Registrable company domain, or null when the tile stays a monogram. */
@@ -46,6 +52,8 @@ export interface TriageRowData {
   logoSource: string | null;
   /** The site's own icon, only for a typed domain. */
   markUrl: string | null;
+  /** The listed spelling this company matched, or null. */
+  targetName: string | null;
 }
 
 /** The selected job's detail, loaded on demand. */
@@ -81,15 +89,23 @@ export interface Ranking {
   bands: Bands;
 }
 
+export interface IndustryInfo {
+  id: string;
+  label: string;
+}
+
 export interface TriagePageData {
   rows: TriageRowData[];
   places: PlaceInfo[];
+  industries: IndustryInfo[];
   whereDefault: string[];
   ranking: Ranking;
   /** When the rows were read; ages are computed from it so the server and client render alike. */
   nowMs: number;
   /** The Unscored view's hero; null on the other views. */
   scoring: ScoringSummary | null;
+  /** Cost and time for one more scoring call. Null on the other views, and when the read failed. */
+  pace: ScorePace | null;
   /** A score batch still running, so the hero picks its progress back up. */
   liveRun: ScoreRunState | null;
   /** Passed once. The client builds each logo URL. Empty means every tile is a monogram. */
@@ -143,9 +159,10 @@ const DIM_LABEL: Record<DimKey, string> = {
 export function scoreOf(
   dims: DimScores | null,
   ranking: Ranking,
+  target = false,
 ): { score: number | null; band: Band | null } {
   if (!dims) return { score: null, band: null };
-  const { score } = computeRank(toDimensions(dims), ranking.weights, ranking.bands);
+  const { score } = computeRank(toDimensions(dims), ranking.weights, ranking.bands, { target });
   return { score, band: score === null ? null : verdictFor(score, ranking.bands) };
 }
 
@@ -162,7 +179,7 @@ export function toSummary(
   application: { status: string } | null = null,
   logoClientId: string | null = null,
 ): JobSummary {
-  const { score, band } = scoreOf(row.dims, ranking);
+  const { score, band } = scoreOf(row.dims, ranking, row.targetName !== null);
   const placeId = row.areas.find((a) => places.get(a)?.kind === 'place');
   const place = placeId ? places.get(placeId) : undefined;
   return {
@@ -186,6 +203,7 @@ export function toSummary(
     state: stateOf(row.status, application),
     closed: row.closed,
     place: place ? { id: place.id, label: place.label } : null,
+    target: row.targetName !== null,
   };
 }
 
@@ -247,18 +265,38 @@ function formulaFor(
   score: number | null,
   ranking: Ranking,
   dims: DimScores,
+  targetName: string | null,
 ): string | undefined {
   if (score === null) return undefined;
   const pts = rows.filter((d) => d.points != null);
   const sum = pts.reduce((a, d) => a + (d.points ?? 0), 0);
   const den = pts.reduce((a, d) => a + d.weight, 0);
-  const { baseScore, cap } = computeRank(toDimensions(dims), ranking.weights, ranking.bands);
+  const computed = computeRank(toDimensions(dims), ranking.weights, ranking.bands, {
+    target: targetName !== null,
+  });
   const nulls = rows.filter((d) => d.score == null).map((d) => d.label.toLowerCase());
-  const parts = [`${baseScore ?? score} = ${sum} points ÷ ${den} total weight × 20`];
+  const parts = [`${computed.baseScore ?? score} = ${sum} points ÷ ${den} total weight × 20`];
   if (nulls.length) parts.push(`${nulls.join(', ')} not listed, so left out`);
-  if (cap && baseScore !== null && score < baseScore) {
-    const names = cap.dimensions.map((d) => DIM_LABEL[DIM_KEY[d]].toLowerCase()).join(', ');
-    parts.push(`${names} at ${cap.level} of 5 caps it at ${cap.maxScore}, so ${score}`);
+  if (computed.target && targetName) {
+    parts.push(`target company +${computed.target.points} (${targetName})`);
+  }
+  const lifted =
+    computed.baseScore === null
+      ? null
+      : Math.min(100, computed.baseScore + (computed.target?.points ?? 0));
+  if (
+    computed.cap &&
+    computed.baseScore !== null &&
+    computed.score !== null &&
+    lifted !== null &&
+    computed.score < lifted
+  ) {
+    const names = computed.cap.dimensions
+      .map((d) => DIM_LABEL[DIM_KEY[d]].toLowerCase())
+      .join(', ');
+    parts.push(
+      `${names} at ${computed.cap.level} of 5 caps it at ${computed.cap.maxScore}, so ${computed.score}`,
+    );
   }
   return parts.join('. ');
 }
@@ -297,12 +335,15 @@ export function toDetailData(
     summary: detail.summary ?? undefined,
     dimensions,
     formula:
-      dimensions && dims ? formulaFor(dimensions, summary.score ?? null, ranking, dims) : undefined,
+      dimensions && dims
+        ? formulaFor(dimensions, summary.score ?? null, ranking, dims, detail.row.targetName)
+        : undefined,
     redFlags: detail.redFlags,
     model: detail.model ?? undefined,
     rubric: detail.rubric ?? undefined,
     scoredLabel: scoredLabel(detail.scoredAt),
     postingUrl: detail.postingUrl,
+    website: companySiteHref(detail.row.domain),
   };
 }
 

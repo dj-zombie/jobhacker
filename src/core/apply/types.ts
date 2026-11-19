@@ -58,12 +58,12 @@ export interface RawFormField {
 }
 
 /**
- * A form adapter. Greenhouse, Lever, and Ashby have their own. `generic` is
- * the path for every other page. Keep these free of click/press/submit.
+ * A form adapter. Greenhouse, Lever, Ashby and SmartRecruiters have their own.
+ * `generic` is the path for every other page. Keep these free of click/press/submit.
  */
 export interface FormAdapter {
-  ats: 'greenhouse' | 'lever' | 'ashby' | 'generic';
-  /** True when this adapter handles the given apply URL. */
+  ats: 'greenhouse' | 'lever' | 'ashby' | 'smartrecruiters' | 'generic';
+  /** True when the apply URL's host is this ATS's. A query string never counts. */
   canHandle(url: string): boolean;
   /** Find the fillable fields on the open application page. */
   detectFields(page: SafePage): Promise<RawFormField[]>;
@@ -120,6 +120,11 @@ export interface FillReport {
    */
   self_identification: { field: string; value: string }[];
   resumeAttached: boolean;
+  /**
+   * Set when a generic page had no application form (no name and email
+   * field), so nothing was typed, uploaded or drafted (J29, D185).
+   */
+  noForm?: { reason: string };
 }
 
 /** Thrown for apply-flow problems (missing application, unsupported ATS, …). */

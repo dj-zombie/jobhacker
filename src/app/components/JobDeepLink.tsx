@@ -2,6 +2,7 @@
 
 import {
   Hint,
+  IndustryMark,
   JobDetail,
   PageHeader,
   type TriageAction,
@@ -28,12 +29,15 @@ import type { ScoreRunState } from '../../core/pipeline/score-run.js';
 import {
   type TriageWriteResult,
   prepJob,
+  setCompanyIndustry,
   startScoreJob,
   triageJobAction,
   undoTriageAction,
 } from '../lib/actions.js';
 import type { EventEntry } from '../lib/activity.js';
+import { play } from '../lib/sfx.js';
 import {
+  type IndustryInfo,
   type PlaceInfo,
   type Ranking,
   type TriageDetailData,
@@ -51,6 +55,7 @@ const ACTION_PAST = { shortlist: 'Shortlisted', skip: 'Skipped', archive: 'Archi
 export function JobDeepLink({
   detail,
   places,
+  industries,
   ranking,
   nowMs,
   events,
@@ -58,6 +63,7 @@ export function JobDeepLink({
 }: {
   detail: TriageDetailData;
   places: PlaceInfo[];
+  industries: IndustryInfo[];
   ranking: Ranking;
   nowMs: number;
   events: EventEntry[];
@@ -68,6 +74,18 @@ export function JobDeepLink({
   const logoEdits = useLogoEditor();
   const logoEdit = logoEdits.edits.get(detail.row.company);
   const [busy, setBusy] = React.useState(false);
+  const [industry, setIndustry] = React.useState({
+    id: detail.row.industryId,
+    status: detail.row.industryStatus,
+    reason: detail.row.industryReason,
+  });
+  React.useEffect(() => {
+    setIndustry({
+      id: detail.row.industryId,
+      status: detail.row.industryStatus,
+      reason: detail.row.industryReason,
+    });
+  }, [detail.row.industryId, detail.row.industryStatus, detail.row.industryReason]);
   const jobId = detail.row.id;
   const label = `${detail.row.title} · ${detail.row.company}`;
   const placeMap = React.useMemo(() => new Map(places.map((p) => [p.id, p] as const)), [places]);
@@ -95,6 +113,7 @@ export function JobDeepLink({
 
   const settle = (res: TriageWriteResult, done: string, onUndo?: () => void) => {
     if (!res.ok) {
+      play('error');
       toast("Couldn't save that", {
         description: res.error,
         icon: <TriangleAlert className="text-danger" />,
@@ -109,6 +128,7 @@ export function JobDeepLink({
   };
 
   const undo = () => {
+    play('undo');
     void undoTriageAction(jobId).then((res) => settle(res, 'Restored'));
   };
 
@@ -117,6 +137,7 @@ export function JobDeepLink({
       window.open(`/job/${jobId}/posting`, '_blank', 'noopener,noreferrer');
       return;
     }
+    play(action);
     void triageJobAction(jobId, action).then((res) => settle(res, ACTION_PAST[action], undo));
   };
 
@@ -137,6 +158,7 @@ export function JobDeepLink({
           : `/applications/${res.applicationId}`,
       );
     } else {
+      play('error');
       toast("Couldn't prepare the application", {
         id,
         description: res.error,
@@ -152,6 +174,7 @@ export function JobDeepLink({
     const started = await startScoreJob(jobId);
     if (!started.ok) {
       setBusy(false);
+      play('error');
       toast("Couldn't start scoring", { id, description: started.error });
       return;
     }
@@ -164,6 +187,7 @@ export function JobDeepLink({
       if (res?.ok) run = (await res.json()) as ScoreRunState;
     }
     setBusy(false);
+    play(run.progress.done > 0 ? 'score-done' : 'error');
     toast(run.progress.done > 0 ? 'Scored' : "Couldn't score this job", {
       id,
       description: run.error ?? label,
@@ -246,6 +270,33 @@ export function JobDeepLink({
           onAction={act}
           onEditLogo={() => logoEdits.openPicker(detail.row.company)}
           onScore={job.score == null ? () => void score() : undefined}
+          industry={
+            industries.length > 0 ? (
+              <IndustryMark
+                options={industries}
+                industryId={industry.status === 'cleared' ? null : industry.id}
+                status={
+                  industry.status === 'suggested' || industry.status === 'confirmed'
+                    ? industry.status
+                    : null
+                }
+                reason={industry.reason}
+                disabled={busy}
+                onSet={(id) => {
+                  setIndustry({
+                    id,
+                    status: 'confirmed',
+                    reason: industry.id === id ? industry.reason : 'Set by you.',
+                  });
+                  void setCompanyIndustry(detail.row.companyId, id);
+                }}
+                onClear={() => {
+                  setIndustry({ id: null, status: 'cleared', reason: 'Cleared by you.' });
+                  void setCompanyIndustry(detail.row.companyId, null);
+                }}
+              />
+            ) : null
+          }
           primary={primary}
         />
       </div>

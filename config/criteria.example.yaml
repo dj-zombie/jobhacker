@@ -10,6 +10,12 @@ gates:                       # the ONLY hard exclusions; closed and duplicate po
                              # months, so keep this generous or off. `pnpm cli funnel` shows the ages.
   company_blocklist: []      # exact company names to never show
 
+# Companies you most want to work for. A scored job at one of them gains
+# (bands.strong − bands.maybe) points, then the usual caps still apply.
+# "Stripe" matches "Stripe, Inc.", and "Riot" matches "Riot Games".
+# Empty adds nothing. This is not a gate, and it does not add a job board.
+target_companies: []
+
 weights:                     # how much each dimension counts in the ranked score (0 = ignore it)
   role_fit: 3                # function/work shape only; not level or management track
   tech_fit: 2                # stack overlap with your actual experience
@@ -46,6 +52,20 @@ places:
 remote:
   countries: [US]          # remote roles open to these countries, or naming none, count as Remote
 where_default: [portland, phoenix, remote]
+
+# Industries are a view filter, like Where. A company is in at most one, or none.
+# `pnpm cli industries` suggests from the company name and its open roles.
+# Confirm or clear a suggestion on the job. Nothing here removes a job.
+industries:
+  - id: games
+    label: Games
+    aliases: [game, games, gaming]
+  - id: audio
+    label: Audio
+    aliases: [audio, music]
+  - id: devtools
+    label: Developer tools
+    aliases: [devtools, developer tools, dev tools]
 
 budget:
   prescore_floor: 0          # compatibility field: MUST remain 0; prescore orders but never excludes

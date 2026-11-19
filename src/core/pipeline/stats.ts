@@ -11,7 +11,7 @@ import { callsThisMonth, creditsThisMonth } from '../sources/budget.js';
 import type { Clock } from '../util/clock.js';
 import { areaCounts, whereDefault } from './areas.js';
 import { computeFunnel } from './funnel.js';
-import { rankedList } from './ranked.js';
+import { rankedList, rankingOf } from './ranked.js';
 import type { ScoringKey } from './score.js';
 import { followUpsDue } from './tracker.js';
 import { unlistedLinks } from './upkeep.js';
@@ -72,6 +72,8 @@ export interface UsefulnessStats {
     selfIdSet: number;
     /** Reports written before the fill event recorded self-ID. */
     selfIdUnrecorded: number;
+    /** Pages with no application form (J29): counted here, left out of the percentages. */
+    noForm: number;
   };
   time: { medianMinutes: number | null; measured: number; submissions: number };
   spend: {
@@ -111,6 +113,7 @@ const fillPayloadSchema = z.object({
   unfilled: z.number(),
   skipped_eeo: z.number(),
   self_identification: z.number().optional(),
+  no_form: z.boolean().optional(),
 });
 
 const scoutStatsSchema = z.object({
@@ -196,12 +199,7 @@ function inWhereMatches(deps: StatsDeps): UsefulnessStats['inWhere'] {
   const { db, clock, criteria } = deps;
   const areas = whereDefault(criteria);
   if (areas.length === 0) return null;
-  const rows = rankedList(
-    db,
-    clock,
-    { weights: criteria.weights, bands: criteria.bands, current: deps.current },
-    { areas },
-  );
+  const rows = rankedList(db, clock, rankingOf(criteria, { current: deps.current }), { areas });
   return {
     areas,
     strong: rows.filter((r) => r.verdict === 'strong').length,
@@ -285,12 +283,17 @@ function fillQuality(db: Db): UsefulnessStats['fill'] {
   let blank = 0;
   let selfIdSet = 0;
   let selfIdUnrecorded = 0;
+  let noForm = 0;
   let reports = 0;
   for (const row of rows) {
     const parsed = fillPayloadSchema.safeParse(row.payload);
     if (!parsed.success) continue;
     const p = parsed.data;
     reports += 1;
+    if (p.no_form) {
+      noForm += 1;
+      continue;
+    }
     const selfId = p.self_identification ?? 0;
     if (p.self_identification === undefined) selfIdUnrecorded += 1;
     const entry = byAts.get(p.ats) ?? { forms: 0, filled: 0, fields: 0 };
@@ -311,6 +314,7 @@ function fillQuality(db: Db): UsefulnessStats['fill'] {
     blank,
     selfIdSet,
     selfIdUnrecorded,
+    noForm,
   };
 }
 
@@ -453,8 +457,8 @@ export function renderStats(s: UsefulnessStats): string {
     s.fill.reports === 0
       ? 'no fill reports yet'
       : [
-          `last ${s.fill.reports} reports: ${perAts}`,
-          `need review ${s.fill.needReview} · blank ${s.fill.blank} · self-ID set ${s.fill.selfIdSet}${unrecorded}`,
+          `last ${s.fill.reports} reports: ${perAts || 'none had a form'}`,
+          `need review ${s.fill.needReview} · blank ${s.fill.blank} · self-ID set ${s.fill.selfIdSet} · no form ${s.fill.noForm}${unrecorded}`,
         ].join('\n          ');
 
   const unmeasured =

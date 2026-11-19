@@ -39,21 +39,25 @@ export function ApplicationsView({ filter }: { filter: "in-progress" | "submitte
       return { app, job, filled, total: fields.length, review, score };
     })
     .filter(({ app }) =>
-      filter === "in-progress" ? app.status === "prepped" : filter === "submitted" ? app.status === "submitted" : false,
+      filter === "in-progress"
+        ? app.status === "prepped" || app.status === "interviewing"
+        : filter === "submitted"
+          ? app.status === "submitted"
+          : app.task != null && (app.task.due === "today" || app.task.due === "overdue"),
     );
 
   const stageCounts = {
     prepped: state.apps.filter((a) => a.status === "prepped").length,
     submitted: state.apps.filter((a) => a.status === "submitted").length,
-    interviewing: 0,
-    offer: 0,
+    interviewing: state.apps.filter((a) => a.status === "interviewing").length,
+    offer: state.apps.filter((a) => a.status === "offer").length,
   };
 
   const stages = [
     { key: "prepped", label: "Prepped", icon: FileText, n: stageCounts.prepped, href: "/applications", tone: "text-brand-hi" },
     { key: "submitted", label: "Submitted", icon: Send, n: stageCounts.submitted, href: "/applications/submitted", tone: "text-strong" },
-    { key: "interviewing", label: "Interviewing", icon: MessagesSquare, n: 0, href: null, tone: "text-info" },
-    { key: "offer", label: "Offer", icon: Trophy, n: 0, href: null, tone: "text-maybe" },
+    { key: "interviewing", label: "Interviewing", icon: MessagesSquare, n: stageCounts.interviewing, href: "/applications", tone: "text-info" },
+    { key: "offer", label: "Offer", icon: Trophy, n: stageCounts.offer, href: null, tone: "text-maybe" },
   ];
 
   const title = filter === "in-progress" ? "In progress" : filter === "submitted" ? "Submitted" : "Follow-ups";
@@ -89,7 +93,9 @@ export function ApplicationsView({ filter }: { filter: "in-progress" | "submitte
           <ol className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             {stages.map((st, i) => {
               const Icon = st.icon;
-              const active = (st.key === "prepped" && filter === "in-progress") || (st.key === "submitted" && filter === "submitted");
+              const active =
+                ((st.key === "prepped" || st.key === "interviewing") && filter === "in-progress") ||
+                (st.key === "submitted" && filter === "submitted");
               return (
                 <li key={st.key} className="relative">
                   <button
@@ -129,7 +135,7 @@ export function ApplicationsView({ filter }: { filter: "in-progress" | "submitte
               title={filter === "follow-ups" ? "No follow-ups due" : "Nothing here yet"}
               body={
                 filter === "follow-ups"
-                  ? "Canva's follow-up comes due on Oct 31. It will show up here that morning."
+                  ? "Applications with something due — a follow-up, or a document they asked for — show up here."
                   : "Applications move here when you mark them submitted."
               }
             />
@@ -154,7 +160,11 @@ export function ApplicationsView({ filter }: { filter: "in-progress" | "submitte
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-fg-3">
                         <span className="text-fg-2">{job.company}</span>
                         <span>Updated {app.updatedLabel}</span>
-                        {app.followUpLabel ? <span>Follow up {app.followUpLabel}</span> : null}
+                        {app.task ? (
+                          <span className="text-maybe">{app.task.label}</span>
+                        ) : app.followUpLabel ? (
+                          <span>Follow up {app.followUpLabel}</span>
+                        ) : null}
                       </div>
                     </div>
                     <div className="hidden w-40 shrink-0 sm:block">

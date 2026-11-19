@@ -12,6 +12,7 @@ const FIELD_PATHS = {
   self_identification:
     /^self_identification\.(gender|race_ethnicity|veteran_status|disability_status|overrides\.\d+\.(key|value))$/,
   preferences: /^preferences$/,
+  companies: /^companies$/,
 } as const;
 
 export type SettingsSectionKey = keyof typeof FIELD_PATHS;

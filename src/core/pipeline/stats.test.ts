@@ -163,6 +163,28 @@ function seedDatabase(): string {
       self_identification: 2,
     },
   });
+  // A job board's resume-review page (J29): counted, left out of the percentages.
+  ev.append({
+    type: 'fill',
+    jobId: strong,
+    payload: {
+      ats: 'jsearch',
+      filled: 0,
+      drafted: 0,
+      unfilled: 0,
+      unfilled_required: 0,
+      skipped_eeo: 0,
+      self_identification: 0,
+      resume_attached: false,
+      no_form: true,
+    },
+  });
+  // A stop before Chrome is not a fill report.
+  ev.append({
+    type: 'fill_skipped',
+    jobId: strong,
+    payload: { host: 'jobleads.com', options: 3, direct: 1 },
+  });
   ev.append({
     type: 'llm_usage',
     payload: { model: 'claude-haiku-5-5', input_tokens: 1000, output_tokens: 100, calls: 2 },
@@ -216,7 +238,7 @@ describe('usefulness stats', () => {
       expect(stats.matches).toEqual({ strong: 2, maybe: 1, weak: 1 });
       expect(stats.apply).toEqual({ prepared: 3, filled: 1, submitted: 1, followUpsDue: 1 });
       expect(stats.fill).toEqual({
-        reports: 2,
+        reports: 3,
         byAts: [
           { ats: 'ashby', forms: 1, filled: 8, fields: 10 },
           { ats: 'greenhouse', forms: 1, filled: 3, fields: 4 },
@@ -225,6 +247,7 @@ describe('usefulness stats', () => {
         blank: 3,
         selfIdSet: 2,
         selfIdUnrecorded: 1,
+        noForm: 1,
       });
       expect(stats.time).toEqual({ medianMinutes: 45, measured: 1, submissions: 1 });
       expect(stats.spend).toMatchObject({ month: '2026-10', modelCalls: 3 });
@@ -260,7 +283,9 @@ describe('usefulness stats', () => {
       expect(text).toContain('in where  not set up');
       expect(text).toContain('links     not read');
       expect(text).toContain('ashby 80% filled over 1 form');
-      expect(text).toContain('(1 of 2 reports predate the self-ID count)');
+      expect(text).toContain('(1 of 3 reports predate the self-ID count)');
+      expect(text).toContain('need review 1 · blank 3 · self-ID set 2 · no form 1');
+      expect(text).not.toMatch(/jsearch \d+% filled/);
       expect(text).toContain('jsearch 2/200 calls · jobspipe off · hn 0/100 calls');
 
       expect(() => sqlite.prepare('delete from jobs').run()).toThrow(/readonly/i);

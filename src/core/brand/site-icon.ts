@@ -23,6 +23,18 @@ export function registrableHost(value: string): string | null {
   return HOSTNAME.test(lower) ? lower : null;
 }
 
+/**
+ * The company's own site, from a stored domain. Always `https` on the registrable
+ * host, with no path, port, or other scheme. Null when there is no usable domain.
+ */
+export function companySiteHref(
+  domain: string | null | undefined,
+): { host: string; href: string } | null {
+  const host = domain ? registrableHost(domain) : null;
+  if (!host) return null;
+  return { host, href: `https://${host}/` };
+}
+
 /** An https icon URL on `domain`, or null. Rejects other hosts, ports, and credentials. */
 export function sameSiteIconUrl(
   url: string | null | undefined,

@@ -5,7 +5,7 @@ const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 p.on("pageerror", (e) => errors.push(String(e)));
 const t0 = Date.now();
-await p.goto("file://" + path.resolve("dist/index.html") + "?stress");
+await p.goto("file://" + path.resolve("dist/index.html") + "?stress&at=/matches");
 await p.waitForSelector('[role="option"]');
 const loadMs = Date.now() - t0;
 const total = await p.evaluate(() => document.querySelector('[role="listbox"]')?.getAttribute("aria-label"));

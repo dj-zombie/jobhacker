@@ -5,8 +5,40 @@ import { type Run, type RunKind, runs } from '../schema.js';
 
 export type { RunKind };
 
-/** A run with no finish time this long after its start crashed; it is not still running. */
-export const ABANDONED_AFTER_MS = 3 * 60 * 60 * 1000;
+/**
+ * How often a live scout rewrites `beatAt`. A slow board, and the work after the
+ * last board, still count as running for as long as this process is alive.
+ */
+export const SCOUT_HEARTBEAT_MS = 20_000;
+
+/**
+ * A scout with no heartbeat for this long has stopped. The process is gone.
+ * One missed rewrite is not enough: the gap is several beats, so a stall in the
+ * event loop during the sync tail does not look like a crash.
+ */
+export const SCOUT_STALLED_AFTER_MS = 3 * 60 * 1000;
+
+/** `beatAt` on a scout's stats, when it is a parseable timestamp. */
+export function scoutBeatAt(stats: unknown): string | null {
+  if (!stats || typeof stats !== 'object') return null;
+  const beat = (stats as { beatAt?: unknown }).beatAt;
+  if (typeof beat !== 'string' || Number.isNaN(Date.parse(beat))) return null;
+  return beat;
+}
+
+/**
+ * An unfinished scout whose last heartbeat is still fresh. A run that never wrote
+ * one is judged from its start, so a crash before the first beat still expires.
+ */
+export function scoutRunIsLive(
+  run: { startedAt: string; finishedAt: string | null; stats: unknown },
+  nowMs: number,
+): boolean {
+  if (run.finishedAt !== null) return false;
+  const at = Date.parse(scoutBeatAt(run.stats) ?? run.startedAt);
+  if (Number.isNaN(at)) return false;
+  return nowMs - at < SCOUT_STALLED_AFTER_MS;
+}
 
 /**
  * Repository for the `runs` table — the bookkeeping row that wraps each
@@ -14,7 +46,7 @@ export const ABANDONED_AFTER_MS = 3 * 60 * 60 * 1000;
  */
 export function runsRepo(db: Db, clock: Clock) {
   return {
-    /** The scout still going, if any. An unfinished scout older than `ABANDONED_AFTER_MS` crashed. */
+    /** The scout still going, if any. An unfinished scout with a stale heartbeat crashed. */
     liveScout(): Run | undefined {
       const open = db
         .select()
@@ -23,7 +55,7 @@ export function runsRepo(db: Db, clock: Clock) {
         .orderBy(desc(runs.id))
         .all();
       const now = clock.nowMs();
-      return open.find((run) => now - Date.parse(run.startedAt) < ABANDONED_AFTER_MS);
+      return open.find((run) => scoutRunIsLive(run, now));
     },
 
     /**

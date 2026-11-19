@@ -3,12 +3,14 @@ import type { Clock } from '../../util/clock.js';
 import type { Db } from '../client.js';
 import {
   type Dimensions,
+  type IndustryStatus,
   type Job,
   type JobScore,
   type JobStatus,
   type ScoreState,
   type Verdict,
   companies,
+  companyIndustry,
   jobScores,
   jobs,
 } from '../schema.js';
@@ -77,6 +79,11 @@ export interface ListedJob {
   areas: string[];
   /** The posting is closed. Shortlist still shows it; the other views do not. */
   closed: boolean;
+  companyId: number;
+  /** Suggested or confirmed industry, or null when none has been named. */
+  industryId: string | null;
+  industryStatus: IndustryStatus | null;
+  industryReason: string | null;
 }
 
 /** A job with a dimension score for its current text: input to `rankJobs`. */
@@ -183,6 +190,10 @@ const listedJobColumns = {
   closed: sql<number>`case when ${jobs.closedAt} is not null then 1 else 0 end`.mapWith(
     (value: unknown) => value === 1 || value === true,
   ),
+  companyId: jobs.companyId,
+  industryId: companyIndustry.industryId,
+  industryStatus: companyIndustry.status,
+  industryReason: companyIndustry.reason,
 };
 
 /** Repository for `job_scores` (ARCHITECTURE § Data model). */
@@ -280,6 +291,7 @@ export function scoresRepo(db: Db, clock: Clock) {
         .from(jobScores)
         .innerJoin(jobs, eq(jobScores.jobId, jobs.id))
         .innerJoin(companies, eq(jobs.companyId, companies.id))
+        .leftJoin(companyIndustry, eq(companyIndustry.companyId, companies.id))
         .where(and(latestDimensionScore(), ...visibility(filters), ...filterConditions(filters)))
         .orderBy(asc(jobs.id))
         .all();
@@ -300,6 +312,7 @@ export function scoresRepo(db: Db, clock: Clock) {
         .select(listedJobColumns)
         .from(jobs)
         .innerJoin(companies, eq(jobs.companyId, companies.id))
+        .leftJoin(companyIndustry, eq(companyIndustry.companyId, companies.id))
         .where(
           and(
             sql`not ${hasDimensionScore()}`,
@@ -333,6 +346,7 @@ export function scoresRepo(db: Db, clock: Clock) {
         .select(listedJobColumns)
         .from(jobs)
         .innerJoin(companies, eq(jobs.companyId, companies.id))
+        .leftJoin(companyIndustry, eq(companyIndustry.companyId, companies.id))
         .where(
           and(
             sql`not ${hasDimensionScore()}`,

@@ -1,5 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { type ApplyLinkFrom, setApplyLink } from '../../core/apply/apply-link.js';
 import { type PreparedAnswerView, markSubmitted, runApply } from '../../core/apply/apply.js';
 import { BrowserError } from '../../core/apply/browser.js';
 import { isStandardKey, isUsable } from '../../core/apply/field-map.js';
@@ -31,24 +32,34 @@ import {
   type SettingsSaveResult,
   savePreferencesSettings,
   saveProfileSettings,
+  saveTargetCompanySettings,
 } from '../../core/config/settings.js';
 import { DEFAULT_BACKUP_DIR } from '../../core/db/backup.js';
 import { createDb, openExistingDb } from '../../core/db/client.js';
 import { applicationsRepo } from '../../core/db/repo/applications.js';
 import { companiesRepo } from '../../core/db/repo/companies.js';
+import { eventsRepo } from '../../core/db/repo/events.js';
 import { runsRepo } from '../../core/db/repo/runs.js';
+import { scoresRepo } from '../../core/db/repo/scores.js';
 import { type ResetPlan, applyReset, planReset } from '../../core/db/reset.js';
 import type { JobStatus } from '../../core/db/schema.js';
 import { createAnthropicLlm } from '../../core/llm/anthropic.js';
+import { FORM_ANSWERS_JOB_CHAR_CAP } from '../../core/llm/prompts/form-answers.js';
 import { LlmError } from '../../core/llm/types.js';
 import { areaIds, whereDefault } from '../../core/pipeline/areas.js';
+import { decideIndustry } from '../../core/pipeline/industry.js';
 import {
   TRIAGE_ACTIONS,
   type TriageAction,
   triageJob,
   undoTriage,
 } from '../../core/pipeline/review.js';
-import { ScoreBusyError, runScoreBatch, startScoreRun } from '../../core/pipeline/score-run.js';
+import {
+  ScoreBusyError,
+  requestScoreStop,
+  runScoreBatch,
+  startScoreRun,
+} from '../../core/pipeline/score-run.js';
 import { scoutCard } from '../../core/pipeline/scout-card.js';
 import {
   type ScoutScoringDeps,
@@ -66,11 +77,25 @@ import {
   setNotes,
 } from '../../core/pipeline/tracker.js';
 import { prepareAnswers } from '../../core/prep/answers.js';
-import { regenerateCoverNote, regenerateResume, runPrep } from '../../core/prep/prep.js';
+import { createNoteLinkReader } from '../../core/prep/citations.js';
+import {
+  DRAFT_MAX_CHARS,
+  NOTE_MAX_CHARS,
+  draftFormAnswers,
+  guidedQuestionKind,
+  storedAnswer,
+} from '../../core/prep/form-answers.js';
+import {
+  regenerateCoverNote,
+  regenerateResume,
+  renderJobText,
+  runPrep,
+} from '../../core/prep/prep.js';
 import { DEFAULT_CACHE_PATH } from '../../core/sources/discover.js';
 import { MoveError, moveToLink } from '../../core/sources/move.js';
 import { relocationsFromStats } from '../../core/sources/relocate.js';
 import { systemClock } from '../../core/util/clock.js';
+import { urlHost } from '../../core/util/host.js';
 import { createHttp } from '../../core/util/http.js';
 import { createLogger } from '../../core/util/logger.js';
 
@@ -149,6 +174,9 @@ function startBatch(
   pick: (criteria: Criteria) => {
     first: string[];
     jobIds?: number[];
+    industry?: string;
+    limit?: number;
+    onlyFirst?: boolean;
   },
 ): StartScoreResult {
   try {
@@ -177,16 +205,88 @@ function startBatch(
   }
 }
 
+/** A Score next choice. Absent fields mean the usual batch: the config cap, places first. */
+export interface ScoreNextChoice {
+  /** This run's cap. Absent: `budget.max_new_scores_per_run`. May be higher than that cap. */
+  limit?: number;
+  /** Score jobs in the run's places and leave everywhere else untouched. */
+  onlyFirst?: boolean;
+}
+
 /**
- * Score next N from the Unscored view: up to `budget.max_new_scores_per_run` jobs, the view's
- * Where first (`where_default` when the view is on Anywhere), then by prescore.
+ * Score next from the Unscored view. With no choice, up to `budget.max_new_scores_per_run`
+ * jobs, the view's Where first (`where_default` when the view is on Anywhere), then by prescore.
+ * A choice can raise the cap or stop at those places.
  */
-export async function startScoreNext(where: string[]): Promise<StartScoreResult> {
+export async function startScoreNext(
+  where: string[],
+  industry: string | null = null,
+  choice: ScoreNextChoice = {},
+): Promise<StartScoreResult> {
   return startBatch((criteria) => {
     const known = areaIds(criteria);
     const picked = known.filter((id) => where.includes(id));
-    return { first: picked.length ? picked : whereDefault(criteria) };
+    const pickedIndustry =
+      !choice.onlyFirst &&
+      industry &&
+      (criteria.industries ?? []).some((row) => row.id === industry)
+        ? industry
+        : undefined;
+    return {
+      first: picked.length ? picked : whereDefault(criteria),
+      ...(pickedIndustry ? { industry: pickedIndustry } : {}),
+      ...(choice.limit != null ? { limit: choice.limit } : {}),
+      ...(choice.onlyFirst ? { onlyFirst: true } : {}),
+    };
   });
+}
+
+/** Stop a live score run after the calls it has already sent. */
+export async function stopScoreRun(
+  runId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const { db, sqlite } = createDb();
+    try {
+      const stopped = requestScoreStop(db, systemClock, runId);
+      if (!stopped) return { ok: false, error: 'That score run has already finished.' };
+    } finally {
+      sqlite.close();
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Confirm, change, or clear the industry on a company. It applies to every job
+ * there. A later classification pass does not overwrite it.
+ */
+export async function setCompanyIndustry(
+  companyId: number,
+  industryId: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const config = loadAllConfig();
+    if (
+      industryId !== null &&
+      !(config.criteria.industries ?? []).some((row) => row.id === industryId)
+    ) {
+      return { ok: false, error: 'That industry is not in criteria.yaml.' };
+    }
+    const { db, sqlite } = createDb();
+    try {
+      const saved = decideIndustry(db, systemClock, companyId, industryId);
+      if (!saved) return { ok: false, error: 'That company is not in the database.' };
+    } finally {
+      sqlite.close();
+    }
+    revalidateShell();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Score this job, from the detail pane: one model call for one job. */
@@ -573,6 +673,118 @@ export async function regenerateAnswersAction(
   }
 }
 
+export interface DraftAnswerResult {
+  ok: boolean;
+  /** The draft, or a `[NEEDS INPUT: …]` marker when it still is not grounded. */
+  answer?: string;
+  /** True when the field is a marker and he still has to supply a fact. */
+  needsInput?: boolean;
+  error?: string;
+}
+
+/**
+ * Rewrite one form answer from his rough answer, his note, or both (D180).
+ * The text is returned for him to read and save. It is not written here.
+ * The note and the drafts are not logged.
+ */
+export async function draftAnswerAction(
+  jobId: number,
+  question: string,
+  note: string,
+  roughAnswer: string,
+): Promise<DraftAnswerResult> {
+  const label = question.trim();
+  const guidance = note.trim();
+  const rough = roughAnswer.replace(/\[NEEDS INPUT[^\]]*\]/gi, ' ').trim();
+  if (label.length === 0 || label.length > 2_000) {
+    return { ok: false, error: 'That question is missing.' };
+  }
+  if (guidance.length === 0 && rough.length === 0) {
+    return { ok: false, error: 'Write a rough answer or a note first.' };
+  }
+  if (guidance.length > NOTE_MAX_CHARS) {
+    return { ok: false, error: `Keep the note under ${NOTE_MAX_CHARS} characters.` };
+  }
+  if (rough.length > DRAFT_MAX_CHARS) {
+    return { ok: false, error: `Keep the answer under ${DRAFT_MAX_CHARS} characters.` };
+  }
+
+  let sqlite: ReturnType<typeof createDb>['sqlite'] | undefined;
+  try {
+    const config = loadAllConfig();
+    const llm = createAnthropicLlm();
+    const opened = createDb();
+    sqlite = opened.sqlite;
+    const detail = scoresRepo(opened.db, systemClock).detail(jobId);
+    if (!detail) return { ok: false, error: `No job ${jobId}.` };
+    const app = applicationsRepo(opened.db, systemClock).findByJob(jobId);
+    if (!app) return { ok: false, error: 'Prepare this job before drafting an answer.' };
+
+    const result = await draftFormAnswers(
+      {
+        llm,
+        model: config.criteria.llm.writing_model,
+        profile: config.profile,
+        preferences: config.preferences,
+        jobText: renderJobText(detail.job, detail.company, FORM_ANSWERS_JOB_CHAR_CAP),
+        coverNote: app.coverNote ?? '',
+        readLink: createNoteLinkReader(),
+      },
+      [
+        {
+          label,
+          hint: '',
+          required: true,
+          kind: guidedQuestionKind(label, rough),
+          options: [],
+        },
+      ],
+      new Map([[0, { draft: rough, note: guidance }]]),
+    );
+    const drafted = result.answers[0];
+    if (!drafted) return { ok: false, error: 'The draft came back empty.' };
+    const answer = storedAnswer(drafted);
+    if (answer.trim() === '') {
+      return { ok: false, error: 'The draft came back empty. Say a little more in the note.' };
+    }
+
+    eventsRepo(opened.db, systemClock).append({
+      type: 'draft_answers',
+      jobId,
+      applicationId: app.id,
+      payload: {
+        model: config.criteria.llm.writing_model,
+        questions: 1,
+        answered: drafted.answer !== null ? 1 : 0,
+        needs_input: drafted.needsInput !== null ? 1 : 0,
+        rejected: result.rejected,
+        retried: result.retried,
+        guided: true,
+        note_chars: guidance.length,
+        draft_chars: rough.length,
+      },
+    });
+    eventsRepo(opened.db, systemClock).append({
+      type: 'llm_usage',
+      jobId,
+      applicationId: app.id,
+      payload: {
+        model: config.criteria.llm.writing_model,
+        prompt: 'form-answers',
+        input_tokens: result.usage.inputTokens,
+        output_tokens: result.usage.outputTokens,
+        calls: result.usage.calls,
+      },
+    });
+    return { ok: true, answer, needsInput: drafted.needsInput !== null };
+  } catch (err) {
+    if (err instanceof LlmError) return { ok: false, error: err.message };
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    sqlite?.close();
+  }
+}
+
 export interface OpenAndFillResult {
   ok: boolean;
   fallback?: boolean;
@@ -583,6 +795,10 @@ export interface OpenAndFillResult {
   /** True when Chrome is not reachable; `launchCommand` tells the human what to run. */
   needsChrome?: boolean;
   launchCommand?: string;
+  /** The link is on a job board: nothing was opened (J29). */
+  skipped?: { host: string };
+  /** The page opened but had no application form; the tab stays open (J29). */
+  noForm?: { host: string; reason: string };
   error?: string;
 }
 
@@ -623,7 +839,7 @@ export async function openAndFill(jobId: number): Promise<OpenAndFillResult> {
           : {}),
       },
     );
-    revalidateShell();
+    if (!result.skipped) revalidateShell();
     return {
       ok: true,
       fallback: result.fallback,
@@ -631,6 +847,8 @@ export async function openAndFill(jobId: number): Promise<OpenAndFillResult> {
       applyUrl: result.applyUrl,
       report: result.report,
       answers: result.answers,
+      ...(result.skipped ? { skipped: { host: result.skipped.host } } : {}),
+      ...(result.noForm ? { noForm: result.noForm } : {}),
     };
   } catch (err) {
     if (err instanceof BrowserError) {
@@ -639,6 +857,37 @@ export async function openAndFill(jobId: number): Promise<OpenAndFillResult> {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   } finally {
     sqlite?.close();
+  }
+}
+
+/**
+ * Set or clear the employer's application link on one application (J29). Kris
+ * pastes it, or presses Use this link on one of the job's apply links. A job
+ * board's link is refused with the reason. Nothing here requests the link.
+ */
+export async function setApplyLinkAction(
+  applicationId: number,
+  value: string | null,
+  from: ApplyLinkFrom = 'pasted',
+): Promise<
+  { ok: true; applyUrl: string | null; host: string | null } | { ok: false; error: string }
+> {
+  try {
+    const { db, sqlite } = createDb();
+    try {
+      const result = setApplyLink(db, systemClock, applicationId, value, from);
+      if (!result.ok) return result;
+      revalidateShell();
+      return {
+        ok: true,
+        applyUrl: result.applyUrl,
+        host: result.applyUrl ? urlHost(result.applyUrl) : null,
+      };
+    } finally {
+      sqlite.close();
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -927,6 +1176,11 @@ export async function saveProfileSectionAction<S extends ProfileSection>(
     return { status: 'refused', error: 'There is no such profile section.', issues: [] };
   }
   return settingsSave((deps) => saveProfileSettings(deps, section, value, confirmRescore));
+}
+
+/** Save the company list. It re-ranks on the next read and does not re-score. */
+export async function saveTargetCompaniesAction(text: string): Promise<SettingsSaveResult<string>> {
+  return settingsSave((deps) => saveTargetCompanySettings(deps, text));
 }
 
 /** Save `preferences.md`, on the same terms as a profile section. */

@@ -105,10 +105,20 @@ export function eventSummary(event: EventLike, firstPrep: boolean): EventSummary
       const drafted = num(p, 'drafted') ?? 0;
       const unfilled = num(p, 'unfilled') ?? 0;
       const required = num(p, 'unfilled_required') ?? 0;
-      if (filled === 0 && unfilled === 0) {
+      if (field(p, 'no_form') === true) {
+        return {
+          title: 'Opened a page with no application form',
+          detail: 'Nothing was filled',
+          kind: 'fill',
+        };
+      }
+      if (filled === 0) {
         return {
           title: 'Opened the application in Chrome',
-          detail: 'No fields found to fill',
+          detail:
+            unfilled === 0
+              ? 'No fields found to fill'
+              : `Nothing filled, ${plural(unfilled, 'field')} left blank`,
           kind: 'fill',
         };
       }
@@ -117,6 +127,41 @@ export function eventSummary(event: EventLike, firstPrep: boolean): EventSummary
       if (required > 0) parts.push(`${required} required left blank`);
       if (field(p, 'resume_attached') === true) parts.push('resume attached');
       return { title: 'Filled the application in Chrome', detail: parts.join(', '), kind: 'fill' };
+    }
+    case 'fill_skipped': {
+      const host = str(p, 'host');
+      const options = num(p, 'options') ?? 0;
+      return {
+        title: host ? `Nothing to fill on ${host}` : 'Nothing to fill on a job board',
+        detail: `A job board, so Chrome wasn't opened. ${plural(options, 'link')} from the search stored`,
+        kind: 'fill',
+      };
+    }
+    case 'employer_read': {
+      const from = str(p, 'from') ?? 'a placeholder';
+      const to = str(p, 'to');
+      const quote = str(p, 'quote');
+      if (!to)
+        return {
+          title: 'The posting names no employer',
+          detail: `Listed as "${from}"`,
+          kind: 'note',
+        };
+      return {
+        title: `Read the employer from the posting: ${to}`,
+        detail: `Listed as "${from}"${quote ? `. "${truncate(quote, 120)}"` : ''}`,
+        kind: 'note',
+      };
+    }
+    case 'apply_link': {
+      const host = str(p, 'host');
+      const from = str(p, 'from');
+      if (from === 'cleared') return { title: 'Cleared the employer link', kind: 'note' };
+      return {
+        title: host ? `Set the employer link to ${host}` : 'Set the employer link',
+        detail: from === 'option' ? "From the job's apply links" : 'Pasted',
+        kind: 'note',
+      };
     }
     case 'answer_approved': {
       const question = str(p, 'question');

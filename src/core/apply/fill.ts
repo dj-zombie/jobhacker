@@ -143,6 +143,30 @@ async function toQuestion(page: SafePage, unit: Unit): Promise<OpenQuestion | un
   return undefined;
 }
 
+const NAME_SOURCES = new Set(['contact.first_name', 'contact.last_name', 'contact.name']);
+
+/**
+ * Why a generic page isn't an application form, or null when it is one: some
+ * field maps to `contact.email` and some field to a name.
+ */
+export function noFormReason(
+  fields: readonly RawFormField[],
+  ctx: Parameters<typeof mapField>[1],
+): string | null {
+  let email = false;
+  let name = false;
+  for (const field of fields) {
+    const mapping = mapField(field, ctx);
+    if (mapping.kind !== 'value' && mapping.kind !== 'needs_input') continue;
+    if (mapping.source === 'contact.email') email = true;
+    if (NAME_SOURCES.has(mapping.source)) name = true;
+  }
+  if (email && name) return null;
+  if (fields.length === 0) return 'no fields on the page';
+  if (!email && !name) return 'no name or email field';
+  return email ? 'no name field' : 'no email field';
+}
+
 /** A text/select field we filled and must verify actually stuck. */
 interface PendingFill {
   field: RawFormField;
@@ -159,10 +183,7 @@ export async function fillForm(
   url: string,
 ): Promise<FillReport> {
   const fields = await adapter.detectFields(page);
-  const units = toUnits(fields);
-  const llmMappings = deps.mapFields ? await deps.mapFields(fields) : undefined;
 
-  // Draft every question nothing else covers, in one call.
   let answers = deps.answers;
   const ctx = () => ({
     profile: deps.profile,
@@ -170,6 +191,30 @@ export async function fillForm(
     coverNote: deps.coverNote ?? null,
     coverLetterAvailable: deps.coverLetterAvailable ?? false,
   });
+
+  // A page with no name and email field is not an application form: a job
+  // board's resume-review uploader, email finder, search box or signup. Fill
+  // nothing there, ask no model, and leave the tab as it is (D185).
+  if (adapter.ats === 'generic') {
+    const reason = noFormReason(fields, ctx());
+    if (reason) {
+      return {
+        ats: deps.reportAts ?? adapter.ats,
+        url,
+        filled: [],
+        unfilled: [],
+        skipped_eeo: [],
+        self_identification: [],
+        resumeAttached: false,
+        noForm: { reason },
+      };
+    }
+  }
+
+  const units = toUnits(fields);
+  const llmMappings = deps.mapFields ? await deps.mapFields(fields) : undefined;
+
+  // Draft every question nothing else covers, in one call.
   if (deps.draftAnswers) {
     const questions: OpenQuestion[] = [];
     const seen = new Set<string>();

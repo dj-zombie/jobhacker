@@ -15,10 +15,14 @@ import {
   DEFAULT_THRESHOLDS,
   DEFAULT_WEIGHTS,
   JOBS,
+  SCORE_SAMPLE,
   STATS,
   descriptionFor,
   fieldsFor,
   reasonFor,
+  type AppContact,
+  type AppStatus,
+  type AppTask,
   type DemoApp,
   type DemoJob,
   type Dims,
@@ -62,6 +66,29 @@ export function areasOf(job: DemoJob): string[] {
 export function inWhere(job: DemoJob, where: string[]): boolean {
   if (where.length === 0) return true;
   return areasOf(job).some((a) => where.includes(a));
+}
+
+export const INDUSTRY_OPTIONS = [
+  { id: "games", label: "Games" },
+  { id: "audio", label: "Audio" },
+  { id: "devtools", label: "Developer tools" },
+] as const;
+
+/** Companies the demo already has, labeled the way the filter would show them. */
+const COMPANY_INDUSTRY: Record<string, NonNullable<DemoJob["industry"]>> = {
+  Linear: { id: "devtools", status: "confirmed" },
+  Vercel: { id: "devtools", status: "confirmed" },
+  GitLab: { id: "devtools", status: "confirmed" },
+  Supabase: { id: "devtools", status: "confirmed" },
+  Sentry: { id: "devtools", status: "confirmed" },
+  Roblox: { id: "games", status: "suggested" },
+  SoundCloud: { id: "audio", status: "suggested" },
+};
+
+/** Null means every industry. */
+export function inDemoIndustry(job: DemoJob, industry: string | null): boolean {
+  if (!industry) return true;
+  return job.industry?.id === industry;
 }
 
 /** Same formula as core's rank.ts: weighted mean of non-null dimensions, scaled to 0–100. */
@@ -168,6 +195,8 @@ export interface State {
   segment: Segment;
   /** Selected place ids; empty means Anywhere. */
   where: string[];
+  /** Selected industry id. Null means every industry. */
+  industry: string | null;
   posted: "any" | "1d" | "7d" | "30d";
   tuneOpen: boolean;
   scout: { done: number; total: number; found: number } | null;
@@ -185,9 +214,11 @@ export interface State {
 // `?stress` replicates the scored jobs to about 11,000 rows to check virtualization.
 const STRESS = typeof location !== "undefined" && location.search.includes("stress");
 const FRAME = typeof location !== "undefined" ? new URLSearchParams(location.search).get("frame") : null;
-const BASE_JOBS = JOBS.map((j) =>
-  FRAME === "closed" && j.id === "vercel-de" ? { ...j, state: "shortlisted" as const, closed: true } : { ...j },
-);
+const BASE_JOBS = JOBS.map((j) => ({
+  ...j,
+  ...(COMPANY_INDUSTRY[j.company] ? { industry: COMPANY_INDUSTRY[j.company] } : {}),
+  ...(FRAME === "closed" && j.id === "vercel-de" ? { state: "shortlisted" as const, closed: true } : {}),
+}));
 const SEED_JOBS = STRESS
   ? BASE_JOBS.concat(
       Array.from({ length: 300 }, (_, k) =>
@@ -213,6 +244,7 @@ export const initialState: State = {
   density: "comfortable",
   segment: "matches",
   where: DEFAULT_WHERE,
+  industry: null,
   posted: "any",
   tuneOpen: false,
   scout: null,
@@ -240,6 +272,12 @@ export type Action =
   | { type: "density"; density: State["density"] }
   | { type: "segment"; segment: Segment }
   | { type: "where"; where: string[] }
+  | { type: "industry"; industry: string | null }
+  | {
+      type: "companyIndustry";
+      company: string;
+      industryId: NonNullable<DemoJob["industry"]>["id"] | null;
+    }
   | { type: "posted"; posted: State["posted"] }
   | { type: "scout"; progress: State["scout"] }
   | { type: "scoutDone"; found: number }
@@ -294,6 +332,20 @@ export function reducer(s: State, a: Action): State {
       return { ...s, segment: a.segment };
     case "where":
       return { ...s, where: a.where };
+    case "industry":
+      return { ...s, industry: a.industry };
+    case "companyIndustry":
+      return {
+        ...s,
+        jobs: s.jobs.map((job) =>
+          job.company === a.company
+            ? {
+                ...job,
+                industry: a.industryId ? { id: a.industryId, status: "confirmed" } : undefined,
+              }
+            : job,
+        ),
+      };
     case "posted":
       return { ...s, posted: a.posted };
     case "scout":
@@ -356,4 +408,148 @@ export function reducer(s: State, a: Action): State {
 
 export function sameWeights(a: Weights, b: Weights): boolean {
   return KEYS.every((k) => a[k] === b[k]);
+}
+
+/* ---------- Dashboard ---------- */
+
+export interface FunnelStage {
+  id: string;
+  label: string;
+  value: number;
+  /** Background class for the bar, e.g. "bg-info". Every stage also carries a label. */
+  tone: string;
+  /** The drop from the stage before it, e.g. "−241 gated". */
+  note?: string;
+}
+
+export interface SectorRow {
+  id: string;
+  label: string;
+  count: number;
+  kind: "place" | "remote" | "rest";
+}
+
+/** One application as the dashboard board shows it: identity, stage, last contact, open action. */
+export interface InFlightApp {
+  id: string;
+  company: string;
+  title: string;
+  logoUrl: string | null;
+  status: AppStatus;
+  contact?: AppContact;
+  task?: AppTask;
+  /** A task due today or overdue. These sort first and carry the follow-up accent. */
+  needsAction: boolean;
+}
+
+export interface DashboardModel {
+  /** Match bands over the current scores; `matches` is strong + maybe. */
+  signal: { strong: number; maybe: number; weak: number; matches: number; scored: number };
+  today: { newToday: number; followUpsDue: number };
+  /** The recon pipeline, widest first: harvested → past gates → scored → matches. */
+  funnel: FunnelStage[];
+  gated: { closed: number; duplicate: number; blocklist: number; age: number; total: number };
+  boards: { active: number; byAts: { ats: string; count: number }[] };
+  searchOnly: { total: number; bySource: { source: string; count: number }[] };
+  sector: SectorRow[];
+  inWhere: { strong: number; maybe: number };
+  /** The live applications, urgent first, for the Mission board. */
+  inFlight: InFlightApp[];
+  apply: { prepared: number; filled: number; submitted: number; followUpsDue: number };
+  fill: { ats: string; pct: number; forms: number }[];
+  time: { medianMinutes: number; submissions: number };
+  spend: {
+    modelCalls: number;
+    usd: number;
+    sources: { name: string; calls: number; budget: number; credits?: number; creditBudget?: number }[];
+  };
+  logos: { companies: number; withDomain: number; confirmed: number };
+  scored: { current: number; stale: number; unscored: number };
+  /** 0–100 scores for the signal-spectrum histogram. */
+  scores: number[];
+}
+
+/**
+ * Assembles the dashboard's read-only snapshot. In the app this maps from core's computeStats();
+ * here it reshapes the fictional STATS aggregates (data.ts) into view-ready shapes. The live scout
+ * state, Run scout and Refresh listings come from the shell (useDemo) in the view, not from here.
+ */
+export function dashboardModel(state: State): DashboardModel {
+  const s = STATS;
+  const matches = s.bands.strong + s.bands.maybe;
+  const funnel: FunnelStage[] = [
+    { id: "harvested", label: "Harvested", value: s.totalJobs, tone: "bg-fg-4" },
+    { id: "live", label: "Past the gates", value: s.passed, tone: "bg-info", note: `−${formatGate(s.gated)} gated` },
+    {
+      id: "scored",
+      label: "Scored",
+      value: s.scoredCurrent,
+      tone: "bg-uv-hi",
+      note: `${formatGate(state.unscoredCount)} still unscored`,
+    },
+    { id: "matches", label: "Matches", value: matches, tone: "bg-brand-hi", note: `${s.bands.strong} strong` },
+  ];
+  const sector: SectorRow[] = [
+    { id: "portland", label: "Portland", count: s.where.portland, kind: "place" },
+    { id: "phoenix", label: "Phoenix", count: s.where.phoenix, kind: "place" },
+    { id: "remote", label: "Remote", count: s.where.remote, kind: "remote" },
+    { id: "elsewhere", label: "Elsewhere", count: s.where.elsewhere, kind: "rest" },
+  ];
+  const dueRank: Record<AppTask["due"], number> = { overdue: 0, today: 1, soon: 2 };
+  const stageRank: Record<AppStatus, number> = {
+    interviewing: 0,
+    submitted: 1,
+    offer: 2,
+    prepped: 3,
+    rejected: 4,
+  };
+  const inFlight: InFlightApp[] = state.apps
+    .map((app): InFlightApp => {
+      const job = state.jobs.find((j) => j.id === app.jobId);
+      const company = job?.company ?? app.id;
+      return {
+        id: app.id,
+        company,
+        title: job?.title ?? "Application",
+        logoUrl: demoLogoUrl(company),
+        status: app.status,
+        contact: app.contact,
+        task: app.task,
+        needsAction: app.task != null && (app.task.due === "today" || app.task.due === "overdue"),
+      };
+    })
+    .sort((a, b) => {
+      if (a.needsAction !== b.needsAction) return a.needsAction ? -1 : 1;
+      const byDue = (a.task ? dueRank[a.task.due] : 9) - (b.task ? dueRank[b.task.due] : 9);
+      if (byDue !== 0) return byDue;
+      return stageRank[a.status] - stageRank[b.status];
+    });
+  return {
+    signal: {
+      strong: s.bands.strong,
+      maybe: s.bands.maybe,
+      weak: s.bands.weak,
+      matches,
+      scored: s.scoredCurrent,
+    },
+    today: { newToday: s.newToday, followUpsDue: s.apply.followUpsDue },
+    funnel,
+    gated: { ...s.gatedBy, total: s.gated },
+    boards: { active: s.boards, byAts: s.boardsByAts },
+    searchOnly: s.searchOnly,
+    sector,
+    inWhere: s.inWhere,
+    inFlight,
+    apply: s.apply,
+    fill: s.fill,
+    time: s.time,
+    spend: s.spend,
+    logos: s.logos,
+    scored: { current: s.scoredCurrent, stale: s.scoredStale, unscored: state.unscoredCount },
+    scores: SCORE_SAMPLE,
+  };
+}
+
+function formatGate(n: number): string {
+  return new Intl.NumberFormat("en-US").format(n);
 }

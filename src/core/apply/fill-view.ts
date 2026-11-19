@@ -23,6 +23,7 @@ const storedReportSchema = z.object({
   // Reports stored before D66 have no self-identification list.
   self_identification: z.array(z.object({ field: z.string(), value: z.string() })).default([]),
   resumeAttached: z.boolean(),
+  noForm: z.object({ reason: z.string() }).optional(),
 });
 
 /** The `applications.fill_report` column as a report, or null when there is none or it doesn't parse. */
@@ -75,8 +76,10 @@ export interface FillView {
   requiredBlank: number;
   resumeAttached: boolean;
   selfIdNote: string;
-  /** The ATS has a form filler (Greenhouse, Lever, Ashby, SmartRecruiters). */
+  /** The form's ATS has a filler (Greenhouse, Lever, Ashby, SmartRecruiters). */
   hasAdapter: boolean;
+  /** The last fill opened a page with no application form (J29). */
+  noForm: { reason: string } | null;
   /**
    * Open the copy-paste fallback without being asked: the ATS has no filler,
    * the fill found no fields, or most fields came back blank.
@@ -280,7 +283,8 @@ function blankRow(id: string, u: UnfilledField, answers: Record<string, string>)
 
 export function fillView(input: FillViewInput): FillView {
   const { report } = input;
-  const hasAdapter = hasFormAdapter(input.ats);
+  // A JSearch hit filled on Ashby has an Ashby report: the form's ATS, not the job's.
+  const hasAdapter = hasFormAdapter(report?.ats ?? input.ats);
   if (!report) {
     return {
       rows: [],
@@ -291,6 +295,7 @@ export function fillView(input: FillViewInput): FillView {
       resumeAttached: false,
       selfIdNote: NO_SELF_ID,
       hasAdapter,
+      noForm: null,
       fallbackOpen: !hasAdapter,
     };
   }
@@ -339,6 +344,7 @@ export function fillView(input: FillViewInput): FillView {
     resumeAttached: report.resumeAttached,
     selfIdNote,
     hasAdapter,
+    noForm: report.noForm ?? null,
     fallbackOpen: !hasAdapter || rows.length === 0 || blank > filled + review,
   };
 }

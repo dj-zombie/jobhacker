@@ -3,6 +3,7 @@
 import {
   Archive,
   ArrowUpRight,
+  Banknote,
   Bookmark,
   CircleDashed,
   Info,
@@ -18,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { ClosedChip, PlaceChip, RemoteChip, StateChip } from "./chips";
 import { Hint } from "./hint";
 import { CompanyHeader, type HeaderFact, type HeaderHud } from "./company-header";
-import { Collapsible, DescriptionBlocks } from "./description";
+import { DescriptionBlocks } from "./description";
 import { DimensionBreakdown } from "./dimension-breakdown";
 import { Kbd } from "./kbd";
 import { BAND_LABEL, BAND_TEXT, ScoreRing } from "./score";
@@ -36,7 +37,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className={cn("surface-card relative rounded-xl p-5 @max-md:p-4", className)}>
+    <section className={cn("surface-card chamfer relative min-w-0 rounded-xl p-5 @max-md:p-4", className)}>
       <div className="mb-3 flex items-center justify-between gap-4">
         <h3 className="hud-label hud-rule min-w-0 flex-1 text-fg-2">
           <span aria-hidden className="-mr-1 h-px w-2.5 bg-brand-hi" />
@@ -57,6 +58,64 @@ function Chip({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** One bar of a loading placeholder, the height of a line of small text. */
+function Bone({ className }: { className?: string }) {
+  return <span aria-hidden className={cn("skeleton block h-2.5 rounded-sm", className)} />;
+}
+
+/** Two paragraphs of bars where the description will be. */
+function DescriptionSkeleton() {
+  return (
+    <div className="max-w-[80ch] space-y-6 py-1 animate-skeleton">
+      <span className="sr-only">Loading the description</span>
+      <div className="space-y-3">
+        <Bone className="h-3 w-28" />
+        <Bone className="w-full" />
+        <Bone className="w-full" />
+        <Bone className="w-11/12" />
+        <Bone className="w-3/5" />
+      </div>
+      <div className="space-y-3">
+        <Bone className="h-3 w-24" />
+        <Bone className="w-full" />
+        <Bone className="w-10/12" />
+        <Bone className="w-full" />
+        <Bone className="w-2/5" />
+      </div>
+    </div>
+  );
+}
+
+const BREAKDOWN_BONES = [
+  { key: "role", label: "w-10", reason: "w-3/4" },
+  { key: "tech", label: "w-12", reason: "w-2/3" },
+  { key: "domain", label: "w-14", reason: "w-4/5" },
+  { key: "seniority", label: "w-16", reason: "w-3/5" },
+  { key: "logistics", label: "w-14", reason: "w-2/3" },
+  { key: "comp", label: "w-10", reason: "w-1/2" },
+] as const;
+
+/** The breakdown's six rows as bars, laid out like `DimensionBreakdown`'s. */
+function BreakdownSkeleton() {
+  return (
+    <div className="@container animate-skeleton">
+      <span className="sr-only">Loading the breakdown</span>
+      <ul className="divide-y divide-line">
+        {BREAKDOWN_BONES.map((b) => (
+          <li key={b.key} className="px-1 py-2.5">
+            <div className="grid grid-cols-[76px_minmax(0,1fr)_32px] items-center gap-2.5 @md:grid-cols-[96px_1fr_44px] @md:gap-3">
+              <Bone className={b.label} />
+              <Bone className="h-1.5 w-full rounded-none" />
+              <Bone className="w-6" />
+            </div>
+            <Bone className={cn("mt-2.5 h-2 @md:ml-[108px]", b.reason)} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /**
  * The right-hand pane of triage: everything needed to decide on one job in
  * about twenty seconds. Content re-animates gently when the job changes, the
@@ -65,15 +124,22 @@ function Chip({ children }: { children: React.ReactNode }) {
  */
 export function JobDetail({
   job,
+  loading = false,
   onAction,
   onTune,
   onScore,
   onEditLogo,
   primary,
+  industry,
   context,
   className,
 }: {
   job: JobDetailData;
+  /**
+   * The job's own details are still on their way: the description, the breakdown, the dates and
+   * the employment type show placeholders in their places, so nothing moves when they arrive.
+   */
+  loading?: boolean;
   /** Where the job is being looked at, for the header's readout: the view, and the job's place in it. */
   context?: Omit<HeaderHud, "level">;
   onAction: (action: TriageAction) => void;
@@ -83,6 +149,8 @@ export function JobDetail({
   onEditLogo?: () => void;
   /** Replace the Shortlist button, e.g. "Prepare application" on the shortlist. */
   primary?: { label: string; icon: React.ReactNode; onClick: () => void; kbd?: string };
+  /** The company's industry, on its own row above the triage actions. */
+  industry?: React.ReactNode;
   className?: string;
 }) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -108,6 +176,7 @@ export function JobDetail({
   // A narrow pane hides the key caps, so every action's tooltip names its key.
   const actions = (compact: boolean) => (
     <>
+      {!compact && industry ? <div className="flex basis-full">{industry}</div> : null}
       {primary ? (
         <Hint label={primary.label} shortcut={primary.kbd} side={compact ? "bottom" : undefined}>
           <Button size={compact ? "sm" : "default"} onClick={primary.onClick}>
@@ -171,14 +240,22 @@ export function JobDetail({
     </>
   );
 
+  const site = job.website ?? null;
   const facts: HeaderFact[] = [
     {
-      label: "Location",
-      value: (
-        <Hint label={job.location}>
-          <span className="truncate">{job.location}</span>
-        </Hint>
+      label: "Pay",
+      value: job.compLabel ? (
+        <span className="inline-flex items-center gap-1.5 font-display text-xl leading-6 font-semibold whitespace-nowrap tnum text-fg @max-md:text-lg">
+          <Banknote aria-hidden className="size-4.5 shrink-0 text-strong" />
+          {job.compLabel}
+        </span>
+      ) : (
+        <span className="text-fg-3">Not listed</span>
       ),
+    },
+    {
+      label: "Location",
+      value: <span className="text-pretty">{job.location}</span>,
     },
     {
       label: "Work",
@@ -189,10 +266,39 @@ export function JobDetail({
         </>
       ),
     },
-    { label: "Posted", value: <span className="truncate">{job.postedLabel}</span> },
+    ...(site
+      ? [
+          {
+            label: "Website",
+            value: (
+              <a
+                href={site.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={site.host}
+                className="inline-flex min-w-0 items-center gap-1 rounded-sm text-brand-hi outline-none hover:underline focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-uv-hi"
+              >
+                <span className="truncate">{site.host}</span>
+                <ArrowUpRight aria-hidden className="size-3.5 shrink-0" />
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            ),
+          },
+        ]
+      : []),
+    {
+      label: "Posted",
+      value: loading ? (
+        <Bone className="my-[5px] w-20 animate-skeleton" />
+      ) : (
+        <span className="truncate">{job.postedLabel}</span>
+      ),
+    },
     {
       label: "Last confirmed",
-      value: (
+      value: loading ? (
+        <Bone className="my-[5px] w-16 animate-skeleton" />
+      ) : (
         <Hint label="Last confirmed" detail="When a scout last saw this posting.">
           <span className="truncate">{job.confirmedLabel}</span>
         </Hint>
@@ -200,9 +306,158 @@ export function JobDetail({
     },
   ];
 
+  // The verdict lays out by its own width, since a wide pane puts it in the side column. Narrow, the
+  // band sits beside the ring and the summary runs underneath both.
+  const verdict = score != null && band != null ? (
+    <section className="@container surface-card chamfer relative overflow-hidden rounded-xl p-5 @max-md:p-4">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-16 -top-24 size-64 rounded-full opacity-40 blur-3xl"
+        style={{ background: `radial-gradient(closest-side, var(--color-${band}-wash), transparent)` }}
+      />
+      <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-5 gap-y-2 @max-sm:gap-x-4 @max-sm:gap-y-3">
+        <ScoreRing score={score} band={band} className="row-span-3 @max-sm:row-span-1" />
+        <div
+          className={cn(
+            "self-end font-display text-[15px] font-semibold uppercase tracking-[0.03em] @max-sm:self-center",
+            BAND_TEXT[band],
+          )}
+        >
+          {BAND_LABEL[band]}
+        </div>
+        {job.summary ? (
+          <p className="text-sm leading-relaxed text-fg-2 @max-sm:col-span-2">{job.summary}</p>
+        ) : null}
+        <div className="col-start-2 flex flex-wrap gap-1.5 self-start @max-sm:col-span-2 @max-sm:col-start-1">
+          {loading ? (
+            <Bone className="h-6 w-18 rounded-full animate-skeleton" />
+          ) : (
+            <Chip>{job.employment}</Chip>
+          )}
+          {job.prescore != null ? (
+            <Hint
+              label={`Prescore ${job.prescore.toFixed(2)}`}
+              detail="Decides when this job gets scored. It never excludes it."
+            >
+              <span>
+                <Chip>Prescore {job.prescore.toFixed(2)}</Chip>
+              </span>
+            </Hint>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  ) : (
+    <section className="@container surface-card chamfer relative rounded-xl p-5 @max-md:p-4">
+      <div className="flex items-center gap-5 @max-sm:flex-col @max-sm:items-start">
+        <div className="flex size-[108px] shrink-0 flex-col items-center justify-center rounded-full border-2 border-dashed border-line-3">
+          <CircleDashed className="size-5 text-fg-3" />
+          <span className="hud-label mt-1 text-fg-3">Not scored</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-lg font-semibold tracking-tight text-fg">Waiting for a score</div>
+          <p className="mt-1 text-sm leading-relaxed text-fg-2">
+            This job passed the gates but hasn't been through the model yet. Its prescore
+            {job.prescore != null ? ` of ${job.prescore.toFixed(2)}` : ""} only decides when it gets scored; it
+            never excludes it.
+          </p>
+          {onScore ? (
+            <Button className="mt-3" size="sm" onClick={onScore}>
+              <Sparkles />
+              Score this job
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+
+  const whyTitle = (
+    <>
+      Why it's here
+      <Hint
+        label="How ranking works"
+        detail="The model scores each dimension once. Your rank is those scores times your weights, worked out on this machine, so changing a weight re-ranks instantly and never calls the API."
+      >
+        <button type="button" aria-label="How ranking works" className="text-fg-4 hover:text-fg-2">
+          <Info className="size-3.5" />
+        </button>
+      </Hint>
+    </>
+  );
+  const whyAside = onTune ? (
+    <Hint label="Tune weights" shortcut="T">
+      <Button size="sm" variant="ghost" onClick={onTune}>
+        <SlidersHorizontal />
+        Tune weights
+        <Kbd className="hidden @xl:inline-flex">T</Kbd>
+      </Button>
+    </Hint>
+  ) : null;
+
+  const why = job.dimensions?.length ? (
+    <Section title={whyTitle} aside={whyAside}>
+      <DimensionBreakdown rows={job.dimensions} formula={job.formula} />
+      {job.prescoreNote ? <p className="mt-2 px-1 text-2xs text-fg-4">{job.prescoreNote}</p> : null}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
+        <div data-replay className="absolute inset-0 opacity-0 animate-scan-down [animation-delay:160ms]">
+          <div className="h-0.5 bg-brand-hi/70 shadow-[0_0_12px_2px_rgb(255_46_79/0.45)]" />
+          <div className="h-10 bg-linear-to-t from-brand/12 to-transparent -translate-y-10.5" />
+        </div>
+      </div>
+    </Section>
+  ) : loading && score != null ? (
+    <Section title={whyTitle} aside={whyAside}>
+      <BreakdownSkeleton />
+    </Section>
+  ) : null;
+
+  const flags = job.redFlags?.length ? (
+    <section className="min-w-0 rounded-xl border border-danger/20 bg-danger-wash/40 p-5 @max-md:p-4">
+      <h3 className="hud-label flex items-center gap-2 text-fg-2">
+        <TriangleAlert className="size-4 text-danger" />
+        Red flags
+        <span className="rounded-full bg-danger-wash px-1.5 font-semibold tnum text-danger">
+          {job.redFlags.length}
+        </span>
+      </h3>
+      <ul className="mt-2.5 space-y-1.5">
+        {job.redFlags.map((f) => (
+          <li key={f} className="flex gap-2.5 text-sm leading-relaxed text-fg-2">
+            <span aria-hidden className="mt-[0.6em] size-1 shrink-0 rounded-full bg-danger" />
+            {f}
+          </li>
+        ))}
+      </ul>
+    </section>
+  ) : null;
+
+  const description = job.description?.length ? (
+    <Section title="Description">
+      <DescriptionBlocks blocks={job.description} />
+    </Section>
+  ) : loading ? (
+    <Section title="Description">
+      <DescriptionSkeleton />
+    </Section>
+  ) : null;
+
+  const scoredBy = job.model ? (
+    <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 px-1 pb-4 font-mono text-2xs text-fg-4">
+      <span>Scored by {job.model}</span>
+      {job.rubric ? <span>Rubric {job.rubric}</span> : null}
+      {job.scoredLabel ? <span>{job.scoredLabel}</span> : null}
+    </p>
+  ) : null;
+
   return (
     <div className={cn("@container flex h-full min-h-0 flex-col", className)}>
-      <div ref={scrollRef} data-detail-scroll className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+      <div
+        ref={scrollRef}
+        data-detail-scroll
+        aria-busy={loading || undefined}
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+      >
         <CompanyHeader
           company={job.company}
           title={job.title}
@@ -223,136 +478,29 @@ export function JobDetail({
           actions={actions(false)}
           compactActions={actions(true)}
           hud={context ? { ...context, level: score == null ? null : score / 100 } : undefined}
-          contentClassName="mx-auto max-w-[760px]"
         >
-        <div ref={bodyRef} className="mx-auto max-w-[760px] space-y-4 px-6 py-5 @max-md:px-4">
-          {score != null && band != null ? (
-            <section className="surface-card chamfer relative overflow-hidden rounded-xl p-5 @max-md:p-4">
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -left-16 -top-24 size-64 rounded-full opacity-40 blur-3xl"
-                style={{ background: `radial-gradient(closest-side, var(--color-${band}-wash), transparent)` }}
-              />
-              <div className="relative flex items-center gap-5 @max-md:flex-col @max-md:items-start">
-                <ScoreRing score={score} band={band} />
-                <div className="min-w-0 flex-1">
-                  <div className={cn("font-display text-[15px] font-semibold uppercase tracking-[0.03em]", BAND_TEXT[band])}>
-                    {BAND_LABEL[band]}
-                  </div>
-                  {job.summary ? <p className="mt-1 text-sm leading-relaxed text-fg-2">{job.summary}</p> : null}
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    <Chip>{job.employment}</Chip>
-                    <Chip>{job.compLabel ?? "Comp not listed"}</Chip>
-                    {job.prescore != null ? (
-                      <Hint
-                        label={`Prescore ${job.prescore.toFixed(2)}`}
-                        detail="Decides when this job gets scored. It never excludes it."
-                      >
-                        <span>
-                          <Chip>Prescore {job.prescore.toFixed(2)}</Chip>
-                        </span>
-                      </Hint>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </section>
-          ) : (
-            <section className="surface-card chamfer relative flex items-center gap-5 rounded-xl p-5 @max-md:flex-col @max-md:items-start">
-              <div className="flex size-[108px] shrink-0 flex-col items-center justify-center rounded-full border-2 border-dashed border-line-3">
-                <CircleDashed className="size-5 text-fg-3" />
-                <span className="hud-label mt-1 text-fg-3">Not scored</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-lg font-semibold tracking-tight text-fg">Waiting for a score</div>
-                <p className="mt-1 text-sm leading-relaxed text-fg-2">
-                  This job passed the gates but hasn't been through the model yet. Its prescore
-                  {job.prescore != null ? ` of ${job.prescore.toFixed(2)}` : ""} only decides when it gets scored; it
-                  never excludes it.
-                </p>
-                {onScore ? (
-                  <Button className="mt-3" size="sm" onClick={onScore}>
-                    <Sparkles />
-                    Score this job
-                  </Button>
-                ) : null}
-              </div>
-            </section>
-          )}
-
-          {job.dimensions?.length ? (
-            <Section
-              title={
-                <>
-                  Why it's here
-                  <Hint
-                    label="How ranking works"
-                    detail="The model scores each dimension once. Your rank is those scores times your weights, worked out on this machine, so changing a weight re-ranks instantly and never calls the API."
-                  >
-                    <button type="button" aria-label="How ranking works" className="text-fg-4 hover:text-fg-2">
-                      <Info className="size-3.5" />
-                    </button>
-                  </Hint>
-                </>
-              }
-              aside={
-                onTune ? (
-                  <Hint label="Tune weights" shortcut="T">
-                    <Button size="sm" variant="ghost" onClick={onTune}>
-                      <SlidersHorizontal />
-                      Tune weights
-                      <Kbd className="hidden @xl:inline-flex">T</Kbd>
-                    </Button>
-                  </Hint>
-                ) : null
-              }
+        <div ref={bodyRef} className="px-6 py-5 @max-md:px-4">
+          {/* One column reads verdict, red flags, description, breakdown. From an 896px pane the
+              description and breakdown are the main column, and the verdict and red flags stay
+              beside them as the description scrolls (top-17 clears the compact bar). */}
+          <div className="grid gap-4 @4xl:grid-cols-12 @4xl:items-start">
+            <div
+              className={cn(
+                "contents @4xl:sticky @4xl:top-17 @4xl:row-start-1 @4xl:grid @4xl:min-w-0 @4xl:gap-4",
+                description || why ? "@4xl:col-span-4 @4xl:col-start-9" : "@4xl:col-span-12",
+              )}
             >
-              <DimensionBreakdown rows={job.dimensions} formula={job.formula} />
-              {job.prescoreNote ? <p className="mt-2 px-1 text-2xs text-fg-4">{job.prescoreNote}</p> : null}
-              <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
-                <div data-replay className="absolute inset-0 opacity-0 animate-scan-down [animation-delay:160ms]">
-                  <div className="h-0.5 bg-brand-hi/70 shadow-[0_0_12px_2px_rgb(255_46_79/0.45)]" />
-                  <div className="h-10 bg-linear-to-t from-brand/12 to-transparent -translate-y-10.5" />
-                </div>
+              {verdict}
+              {flags}
+            </div>
+            {description || why ? (
+              <div className="contents @4xl:col-span-8 @4xl:col-start-1 @4xl:row-start-1 @4xl:grid @4xl:min-w-0 @4xl:gap-4">
+                {description}
+                {why}
               </div>
-            </Section>
-          ) : null}
-
-          {job.redFlags?.length ? (
-            <section className="rounded-xl border border-danger/20 bg-danger-wash/40 p-5 @max-md:p-4">
-              <h3 className="hud-label flex items-center gap-2 text-fg-2">
-                <TriangleAlert className="size-4 text-danger" />
-                Red flags
-                <span className="rounded-full bg-danger-wash px-1.5 font-semibold tnum text-danger">
-                  {job.redFlags.length}
-                </span>
-              </h3>
-              <ul className="mt-2.5 space-y-1.5">
-                {job.redFlags.map((f) => (
-                  <li key={f} className="flex gap-2.5 text-sm leading-relaxed text-fg-2">
-                    <span aria-hidden className="mt-[0.6em] size-1 shrink-0 rounded-full bg-danger" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-
-          {job.description?.length ? (
-            <Section title="Description">
-              <Collapsible key={job.id} maxHeight={300}>
-                <DescriptionBlocks blocks={job.description} />
-              </Collapsible>
-            </Section>
-          ) : null}
-
-          {job.model ? (
-            <p className="flex flex-wrap gap-x-4 gap-y-1 px-1 pb-4 font-mono text-2xs text-fg-4">
-              <span>Scored by {job.model}</span>
-              {job.rubric ? <span>Rubric {job.rubric}</span> : null}
-              {job.scoredLabel ? <span>{job.scoredLabel}</span> : null}
-            </p>
-          ) : null}
+            ) : null}
+          </div>
+          {scoredBy}
         </div>
         </CompanyHeader>
       </div>

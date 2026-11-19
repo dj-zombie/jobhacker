@@ -64,7 +64,7 @@ Prices and terms were taken from each vendor's public pages on 2026-10-23. Check
 
 | Provider | Coverage | Price | Free tier |
 |---|---|---|---|
-| JobsPipe | 30+ sources, including LinkedIn, Indeed, Workday, Greenhouse and Lever | 1 credit per new job per calendar month, not per call. Seeker $19.60/mo for 10k, Builder $49/mo for 25k (its docs, 2026-11-03) | 1,000 credits once, never refilled; 25 jobs a call, 2 requests a second. Kris has a free-plan key |
+| JobsPipe | 30+ sources, including LinkedIn, Indeed, Workday, Greenhouse and Lever | 1 credit per new job per calendar month, not per call. Seeker $19.60/mo for 10k, Builder $49/mo for 25k (its docs, 2026-11-03) | 1,000 credits once, never refilled; 25 jobs a call, 2 requests a second. bring your own free-plan key |
 | TheirStack | 225M records, ~305k a day | from $49/mo | 50 company + 200 API credits/mo |
 | Fantastic.jobs | 200k+ career sites | $95/mo for 20k, up to $900/mo for 500k | 7-day trial |
 | JobDataLake | 1.8M+ jobs, 25k+ companies | $50 for 100k credits | 1,000 credits |
@@ -73,6 +73,8 @@ Prices and terms were taken from each vendor's public pages on 2026-10-23. Check
 | Adzuna | its own listings, per country | free tier, 2,500 calls/mo | yes; commercial use needs a licence |
 
 **Free feeds** are keyless and low in volume: Himalayas, Remotive (24 hours delayed), and USAJOBS (needs a free key).
+
+**JSearch's apply links (J29).** Each JSearch job carries `apply_options`: every place Google for Jobs found the posting, each with a `publisher`, an `apply_link` and `is_direct`. `jsearch.ts` keeps them on `jobs.apply_options` and ranks `apply_url` from them (ARCHITECTURE § Sources). A job stored before J29 gets them from `GET https://api.openwebninja.com/jsearch/job-details?job_id=<id>` (the path in OpenWeb Ninja's OpenAPI spec), one metered call per job through `budget.ts`, never retried (`pnpm cli search:apply-options`). JSearch groups postings by title: job-details for one `job_id` can return other companies' copies of the same title among its `apply_options` (recorded in `tests/fixtures/jsearch-details-grouped.json`), so only an option tied to the stored employer is used or shown (D190). `employer_name` can be a placeholder such as "Remote" or "Confidential", with `employer_website` set to that word's own site; `search:employers` reads the real name from the posting text (D192). Apply links come only from these two endpoints or from Kris. JobHacker never reads a job board's page or follows its redirects to find the employer's link, and never requests the link Kris pastes: Chrome opens it when he presses Open & fill.
 
 ## Recommended
 

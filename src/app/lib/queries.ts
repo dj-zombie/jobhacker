@@ -1,7 +1,7 @@
 import 'server-only';
 import { basename, resolve } from 'node:path';
 import type { Band } from '@/components/jobhacker';
-import { attachedResume } from '../../core/apply/apply.js';
+import { applyPlanFor, attachedResume } from '../../core/apply/apply.js';
 import { isStandardKey } from '../../core/apply/field-map.js';
 import {
   type FillView,
@@ -42,28 +42,28 @@ import { DEFAULT_DB_PATH, type Db, openExistingDb } from '../../core/db/client.j
 import { applicationsRepo } from '../../core/db/repo/applications.js';
 import { domainsRepo } from '../../core/db/repo/domains.js';
 import { eventsRepo } from '../../core/db/repo/events.js';
-import { runsRepo } from '../../core/db/repo/runs.js';
+import { runsRepo, scoutRunIsLive } from '../../core/db/repo/runs.js';
 import { type JobDetail, type ListFilters, scoresRepo } from '../../core/db/repo/scores.js';
 import type { Application, EventRow, ScoreState, Verdict } from '../../core/db/schema.js';
 import { areaIds, areaLabel, whereDefault } from '../../core/pipeline/areas.js';
 import { type Funnel, computeFunnel } from '../../core/pipeline/funnel.js';
+import { industriesOf, industryCounts } from '../../core/pipeline/industry.js';
 import { paletteJobs } from '../../core/pipeline/palette.js';
-import { type RankedOptions, rankedList } from '../../core/pipeline/ranked.js';
+import { type RankedOptions, rankedList, rankingOf } from '../../core/pipeline/ranked.js';
 import { reconcilePlacement } from '../../core/pipeline/reconcile.js';
 import { type ScoutHeader, scoutHeader } from '../../core/pipeline/review.js';
 import {
+  type ScorePace,
   type ScoreRunState,
   liveScoringRun,
+  scorePace,
   scoreRunState,
 } from '../../core/pipeline/score-run.js';
 import { type ScoringKey, scoringInputs } from '../../core/pipeline/score.js';
-import {
-  ABANDONED_AFTER_MS,
-  scoutCard,
-  scoutCheckedWords,
-  scoutStaleBanner,
-} from '../../core/pipeline/scout-card.js';
+import { scoutCard, scoutCheckedWords, scoutStaleBanner } from '../../core/pipeline/scout-card.js';
 import { parseScoutProgress } from '../../core/pipeline/scout-progress.js';
+import { type UsefulnessStats, computeStats } from '../../core/pipeline/stats.js';
+import { targetCompanyReport } from '../../core/pipeline/target.js';
 import {
   type ApplicationList,
   answerApprovals,
@@ -84,9 +84,13 @@ import {
 import { type WhyReport, explainJob } from '../../core/pipeline/why.js';
 import { attachmentName } from '../../core/prep/render.js';
 import { atsLabel } from '../../core/sources/detect.js';
+import { isPlaceholderEmployer, shownEmployer } from '../../core/sources/placeholder-employers.js';
 import { systemClock } from '../../core/util/clock.js';
+import { companyOnList } from '../../core/util/company-match.js';
 import { normalizeCompanyName } from '../../core/util/hash.js';
-import { activityGroups, shortDate } from './activity.js';
+import { urlHost } from '../../core/util/host.js';
+import { activityGroups, eventEntries, shortDate } from './activity.js';
+import type { DashboardData, FollowUpDue, InFlightApp, SectorRow } from './dashboard-types.js';
 import { type QueueItem, compLabel, locationLabel, remoteTypeOf } from './format.js';
 import type {
   RescoreBasisView,
@@ -107,6 +111,7 @@ import type {
   CompanyLogoRef,
   StageCounts,
   WorkspaceAnswer,
+  WorkspaceApply,
   WorkspaceData,
 } from './workspace-types.js';
 
@@ -229,9 +234,18 @@ type RankedRow = ReturnType<typeof rankedList>[number];
 type ListedRow = ReturnType<ReturnType<typeof scoresRepo>['unscoredRows']>[number];
 type OkConfig = Extract<UiConfig, { ok: true }>;
 
+/** The company's logo domain. None for a placeholder like "Remote", whose domain isn't the employer's. */
+function shownDomainOf(
+  domains: ReadonlyMap<string, ShownDomain>,
+  company: string,
+): ShownDomain | undefined {
+  if (isPlaceholderEmployer(company)) return undefined;
+  const key = normalizeCompanyName(company);
+  return key ? domains.get(key) : undefined;
+}
+
 function withDomain(item: QueueItem, domains: ReadonlyMap<string, ShownDomain>): QueueItem {
-  const key = normalizeCompanyName(item.company);
-  const shown = key ? domains.get(key) : undefined;
+  const shown = shownDomainOf(domains, item.company);
   return {
     ...item,
     domain: shown?.domain ?? null,
@@ -243,7 +257,7 @@ function withDomain(item: QueueItem, domains: ReadonlyMap<string, ShownDomain>):
 function rankedItem(row: RankedRow): QueueItem {
   return {
     jobId: row.jobId,
-    company: row.company,
+    company: shownEmployer(row.company),
     title: row.title,
     locationRaw: row.locationRaw,
     remoteType: row.remoteType,
@@ -297,7 +311,7 @@ function viewRows(
       .reviewRows(filters)
       .map((row) => withDomain(listedItem(row, row.remoteType), domains));
   }
-  const ranking = { weights, bands: config.criteria.bands, current: config.key };
+  const ranking = rankingOf(config.criteria, { weights, current: config.key });
   return rankedList(db, systemClock, ranking, { ...filters, verdict }).map((row) =>
     withDomain(rankedItem(row), domains),
   );
@@ -344,8 +358,7 @@ function localDate(iso: string | null): string {
 }
 
 function logoRef(domains: ReadonlyMap<string, ShownDomain>, company: string): CompanyLogoRef {
-  const key = normalizeCompanyName(company);
-  const shown = key ? domains.get(key) : undefined;
+  const shown = shownDomainOf(domains, company);
   return {
     domain: shown?.domain ?? null,
     logoSource: shown?.source ?? null,
@@ -425,7 +438,7 @@ export function getApplicationList(config: OkConfig, list: ApplicationList): App
           return {
             applicationId: row.applicationId,
             title: row.title,
-            company: row.company,
+            company: shownEmployer(row.company),
             status: row.status,
             updatedLabel: updatedLabel(row.updatedAt, nowMs),
             followUpLabel:
@@ -447,7 +460,7 @@ export function getApplicationList(config: OkConfig, list: ApplicationList): App
           .sort((a, b) => (a.followUpAt ?? '').localeCompare(b.followUpAt ?? ''))[0];
         const nextFollowUp =
           upcoming?.followUpAt != null
-            ? { company: upcoming.company, date: shortDate(upcoming.followUpAt) }
+            ? { company: shownEmployer(upcoming.company), date: shortDate(upcoming.followUpAt) }
             : null;
         return { rows, stages, nextFollowUp };
       }),
@@ -485,6 +498,38 @@ function workspaceAnswers(answers: Record<string, string>, view: FillView): Work
   return out;
 }
 
+/** The plan Open & fill would follow, the employer link, and a no-form fill still current (J29). */
+function workspaceApply(db: Db, app: Application, company: string): WorkspaceApply {
+  const plan = applyPlanFor(db, systemClock, app.jobId);
+  const report = parseStoredReport(app.fillReport);
+  const planUrl = plan.url;
+  const employerHost = app.applyUrl ? urlHost(app.applyUrl) : null;
+  return {
+    plan:
+      plan.kind === 'stop'
+        ? {
+            kind: 'stop',
+            host: plan.host,
+            links: plan.options,
+            otherLinks: plan.otherLinks,
+            employerNamed: !isPlaceholderEmployer(company),
+          }
+        : { kind: 'open', host: urlHost(plan.url) ?? plan.url, adapter: plan.adapter },
+    employerLink: app.applyUrl && employerHost ? { url: app.applyUrl, host: employerHost } : null,
+    noForm:
+      plan.kind === 'open' && report?.noForm && report.url === planUrl
+        ? { host: urlHost(report.url) ?? report.url, reason: report.noForm.reason }
+        : null,
+  };
+}
+
+/** A report from before Kris set the employer link was filled on another site, so it doesn't count as filled. */
+function fillIsCurrent(app: Application): boolean {
+  const report = parseStoredReport(app.fillReport);
+  if (!report) return false;
+  return !app.applyUrl || urlHost(report.url) === urlHost(app.applyUrl);
+}
+
 /** Everything the workspace at `/applications/[id]` shows (J7). */
 export function getWorkspace(config: OkConfig, applicationId: number): WorkspaceData | undefined {
   return orEmpty(
@@ -504,7 +549,7 @@ export function getWorkspace(config: OkConfig, applicationId: number): Workspace
           applicationId: app.id,
           jobId: app.jobId,
           title: detail.job.title,
-          company: detail.company,
+          company: shownEmployer(detail.company),
           status: app.status,
           submittedAt: app.submittedAt,
           followUpDate: localDate(app.followUpAt),
@@ -516,7 +561,8 @@ export function getWorkspace(config: OkConfig, applicationId: number): Workspace
           band,
           logo: logoRef(domains, detail.company),
           fill: view,
-          filled: parseStoredReport(app.fillReport) !== null,
+          apply: workspaceApply(db, app, detail.company),
+          filled: fillIsCurrent(app),
           resume: {
             pdfUrl: resume.path
               ? `/applications/${app.id}/resume.pdf?v=${encodeURIComponent(app.updatedAt)}`
@@ -591,13 +637,15 @@ function countsIn(
   db: Db,
   config: OkConfig,
   where: readonly string[],
-  ranking?: { weights?: Weights; bands?: Bands },
+  ranking?: { weights?: Weights; bands?: Bands; industry?: string | null },
 ): TriageCounts {
   return triageCounts(db, systemClock, {
     key: config.key,
     where,
     weights: ranking?.weights ?? config.criteria.weights,
     bands: ranking?.bands ?? config.criteria.bands,
+    industry: ranking?.industry ?? null,
+    targetCompanies: config.criteria.target_companies ?? [],
   });
 }
 
@@ -608,7 +656,7 @@ function countsIn(
 export function getTriageCounts(
   config: OkConfig,
   where: readonly string[],
-  ranking?: { weights?: Weights; bands?: Bands },
+  ranking?: { weights?: Weights; bands?: Bands; industry?: string | null },
 ): TriageCounts {
   return orEmpty(() => withDb((db) => countsIn(db, config, where, ranking)), {
     matches: 0,
@@ -639,13 +687,13 @@ function rowData(
   row: TriageRow,
   order: readonly string[],
   domains: ReadonlyMap<string, ShownDomain>,
+  targets: readonly string[],
 ): TriageRowData {
-  const key = normalizeCompanyName(row.company);
-  const shown = key ? domains.get(key) : undefined;
+  const shown = shownDomainOf(domains, row.company);
   return {
     id: row.jobId,
     title: row.title,
-    company: row.company,
+    company: shownEmployer(row.company),
     location: locationLabel(row),
     remote: remoteTypeOf(row.remoteType),
     comp: row.compMin == null && row.compMax == null ? null : compLabel(row),
@@ -657,10 +705,15 @@ function rowData(
       row.areas.length > 1
         ? [...row.areas].sort((a, b) => order.indexOf(a) - order.indexOf(b))
         : row.areas,
+    companyId: row.companyId,
+    industryId: row.industryId,
+    industryStatus: row.industryStatus,
+    industryReason: row.industryReason,
     dims: row.dims,
     domain: shown?.domain ?? null,
     logoSource: shown?.source ?? null,
     markUrl: shown?.markUrl ?? null,
+    targetName: companyOnList(row.company, targets),
   };
 }
 
@@ -705,6 +758,10 @@ export function getTriagePage(config: OkConfig, view: TriageView): TriagePageDat
   const order = places.map((p) => p.id);
   const base = {
     places,
+    industries: (config.criteria.industries ?? []).map((industry) => ({
+      id: industry.id,
+      label: industry.label,
+    })),
     whereDefault: whereDefault(config.criteria),
     ranking: { weights: config.criteria.weights, bands: config.criteria.bands },
     nowMs: systemClock.nowMs(),
@@ -715,8 +772,9 @@ export function getTriagePage(config: OkConfig, view: TriageView): TriagePageDat
       withDb((db) => {
         reconcilePlacement(db, config.criteria, config.preferences, systemClock);
         const domains = loadDomainMap(db, systemClock);
+        const targets = config.criteria.target_companies ?? [];
         const rows = triageRows(db, systemClock, view, config.key).map((r) =>
-          rowData(r, order, domains),
+          rowData(r, order, domains, targets),
         );
         const stale = scoutStaleBanner(db, systemClock);
         const live = liveScoringRun(db, systemClock);
@@ -730,11 +788,15 @@ export function getTriagePage(config: OkConfig, view: TriageView): TriagePageDat
             view === 'unscored'
               ? scoringSummary(computeFunnel(db, systemClock, config.criteria, config.key))
               : null,
+          pace:
+            view === 'unscored'
+              ? scorePace(db, systemClock, config.criteria.llm.scoring_model)
+              : null,
           liveRun:
             live?.kind === 'score' ? (scoreRunState(db, systemClock, live.id) ?? null) : null,
         };
       }),
-    { ...base, rows: [], banner: null, scoring: null, liveRun: null },
+    { ...base, rows: [], banner: null, scoring: null, pace: null, liveRun: null },
   );
 }
 
@@ -748,7 +810,12 @@ export function getTriageDetail(config: OkConfig, jobId: number): TriageDetailDa
         if (!d) return undefined;
         const s = d.score;
         return {
-          row: rowData(triageRowOf(d), order, loadDomainMap(db, systemClock)),
+          row: rowData(
+            triageRowOf(d),
+            order,
+            loadDomainMap(db, systemClock),
+            config.criteria.target_companies ?? [],
+          ),
           employment: d.job.employmentType ?? '',
           postedAt: d.job.postedAt,
           lastSeenAt: d.job.lastSeenAt,
@@ -829,9 +896,7 @@ export function getScoutRun(runId: number): ScoutRunView | null {
       withDb((db) => {
         const run = runsRepo(db, systemClock).get(runId);
         if (!run || run.kind !== 'scout') return null;
-        const running =
-          run.finishedAt === null &&
-          systemClock.nowMs() - Date.parse(run.startedAt) < ABANDONED_AFTER_MS;
+        const running = scoutRunIsLive(run, systemClock.nowMs());
         const stats =
           run.stats && typeof run.stats === 'object'
             ? (run.stats as Record<string, unknown>)
@@ -856,6 +921,19 @@ export function getScoutRun(runId: number): ScoutRunView | null {
   );
 }
 
+/** Company and open-job counts for each configured industry, for ⌘K. */
+export function getIndustryPalette(config: UiConfig): {
+  id: string;
+  label: string;
+  aliases: string[];
+  companies: number;
+  jobs: number;
+}[] {
+  if (!config.ok) return [];
+  const industries = industriesOf(config.criteria);
+  return orEmpty(() => withDb((db) => industryCounts(db, industries)), []);
+}
+
 /** The top 40 jobs for ⌘K, ranked with the given weights or the saved ones. */
 export function getPaletteJobs(
   config: UiConfig,
@@ -871,14 +949,14 @@ export function getPaletteJobs(
           key: config.key,
           weights: ranking.weights ?? config.criteria.weights,
           bands: ranking.bands ?? config.criteria.bands,
+          targetCompanies: config.criteria.target_companies ?? [],
         }).map((row) => {
-          const key = normalizeCompanyName(row.company);
-          const shown = key ? domains.get(key) : undefined;
+          const shown = shownDomainOf(domains, row.company);
           const band = row.verdict === 'strong' || row.verdict === 'maybe' ? row.verdict : 'no';
           return {
             id: String(row.id),
             title: row.title,
-            company: row.company,
+            company: shownEmployer(row.company),
             location: locationLabel(row),
             score: row.score,
             band,
@@ -906,6 +984,200 @@ export function getFunnel(config: UiConfig): Funnel | null {
         return computeFunnel(db, systemClock, config.criteria, config.key);
       }),
     null,
+  );
+}
+
+/** Open applications are everything that isn't a terminal outcome. Offers stay in flight. */
+const TERMINAL_STATUSES = new Set(['rejected', 'withdrawn', 'ghosted']);
+/** The order the Mission board breaks ties in, after need-action and follow-up urgency. */
+const STAGE_RANK: Record<string, number> = { offer: 0, interviewing: 1, submitted: 2, prepped: 3 };
+const DUE_RANK: Record<FollowUpDue | 'none', number> = { overdue: 0, today: 1, soon: 2, none: 3 };
+
+/** The recon pipeline, widest first, from the same numbers `pnpm cli funnel` prints. */
+function dashboardFunnel(stats: UsefulnessStats): DashboardData['funnel'] {
+  const gated = Math.max(0, stats.jobs.total - stats.jobs.passed - stats.jobs.notYetGated);
+  const n = (x: number) => x.toLocaleString('en-US');
+  return [
+    { id: 'harvested', label: 'Harvested', value: stats.jobs.total, tone: 'bg-fg-4' },
+    {
+      id: 'live',
+      label: 'Past the gates',
+      value: stats.jobs.passed,
+      tone: 'bg-info',
+      note: `−${n(gated)} gated`,
+    },
+    {
+      id: 'scored',
+      label: 'Scored',
+      value: stats.scored.current,
+      tone: 'bg-uv-hi',
+      note: `${n(stats.scored.unscored)} still unscored`,
+    },
+    {
+      id: 'matches',
+      label: 'Matches',
+      value: stats.matches.strong + stats.matches.maybe,
+      tone: 'bg-brand-hi',
+      note: `${stats.matches.strong} strong`,
+    },
+  ];
+}
+
+/** Open jobs by place, in config order, then everything outside the places (`where`). */
+function dashboardSector(places: PlaceInfo[], where: UsefulnessStats['where']): SectorRow[] {
+  if (!where) return [];
+  const byArea = new Map(where.byArea.map((a) => [a.area, a.count]));
+  const rows: SectorRow[] = places.map((p) => ({
+    id: p.id,
+    label: p.label,
+    count: byArea.get(p.id) ?? 0,
+    kind: p.kind === 'remote' ? 'remote' : 'place',
+  }));
+  rows.push({ id: 'elsewhere', label: 'Elsewhere', count: where.elsewhere, kind: 'rest' });
+  return rows;
+}
+
+/**
+ * The applications in flight for the Mission board (J23): open applications, each with its logo,
+ * stage, the newest event as "last activity", and the follow-up date. Nothing is invented
+ * (invariant 3): the activity is a real logged event, and need-action is exactly the
+ * Follow-ups-due list. Most urgent first.
+ */
+function inFlightApps(
+  db: Db,
+  config: OkConfig,
+  domains: ReadonlyMap<string, ShownDomain>,
+): InFlightApp[] {
+  const cutoff = followUpCutoff(systemClock);
+  const startOfDay = new Date(systemClock.nowMs());
+  startOfDay.setHours(0, 0, 0, 0);
+  const startIso = startOfDay.toISOString();
+  const events = eventsRepo(db, systemClock);
+  const apps = listApplications(db, systemClock)
+    .filter((row) => !TERMINAL_STATUSES.has(row.status))
+    .map((row): InFlightApp => {
+      const newest = eventEntries(events.timeline(row.jobId, row.applicationId))[0];
+      const followUpAt = row.followUpAt;
+      const due: FollowUpDue | null =
+        row.status !== 'prepped' && followUpAt !== null
+          ? followUpAt < startIso
+            ? 'overdue'
+            : followUpAt <= cutoff
+              ? 'today'
+              : 'soon'
+          : null;
+      return {
+        applicationId: row.applicationId,
+        company: shownEmployer(row.company),
+        title: row.title,
+        logo: logoRef(domains, row.company),
+        status: row.status,
+        activity: newest ? { label: newest.label, at: shortDate(newest.at) } : null,
+        followUp: due && followUpAt ? { label: shortDate(followUpAt), due } : null,
+        hasNote: (row.notes ?? '').trim().length > 0,
+        needsAction: inApplicationList(row, 'follow-ups', cutoff),
+      };
+    });
+  apps.sort((a, b) => {
+    if (a.needsAction !== b.needsAction) return a.needsAction ? -1 : 1;
+    const byDue = DUE_RANK[a.followUp?.due ?? 'none'] - DUE_RANK[b.followUp?.due ?? 'none'];
+    if (byDue !== 0) return byDue;
+    return (STAGE_RANK[a.status] ?? 9) - (STAGE_RANK[b.status] ?? 9);
+  });
+  return apps;
+}
+
+const EMPTY_DASHBOARD: DashboardData = {
+  signal: { strong: 0, maybe: 0, weak: 0, matches: 0, scored: 0 },
+  today: { newToday: 0, followUpsDue: 0 },
+  funnel: [],
+  boards: { active: 0, byAts: [] },
+  searchOnly: { total: 0, bySource: [] },
+  sector: [],
+  inWhere: { strong: 0, maybe: 0 },
+  inFlight: [],
+  openCount: 0,
+  needAction: 0,
+  apply: { prepared: 0, filled: 0, submitted: 0, followUpsDue: 0 },
+  fill: [],
+  time: { medianMinutes: null, submissions: 0 },
+  spend: { modelCalls: 0, usd: 0, sources: [] },
+  logos: { companies: 0, withDomain: 0, confirmed: 0 },
+  scored: { current: 0, stale: 0, unscored: 0 },
+  scores: [],
+  thresholds: { strong: 0, maybe: 0 },
+};
+
+/**
+ * Everything the dashboard at `/` shows (J23). One read: `computeStats` (so the dashboard and
+ * `pnpm cli stats` agree), a score sample for the spectrum, and the applications in flight.
+ */
+export function getDashboard(config: OkConfig): DashboardData {
+  return orEmpty(
+    () =>
+      withDb((db): DashboardData => {
+        reconcilePlacement(db, config.criteria, config.preferences, systemClock);
+        const stats = computeStats({
+          db,
+          clock: systemClock,
+          criteria: config.criteria,
+          current: config.key,
+        });
+        const domains = loadDomainMap(db, systemClock);
+        const scores = rankedList(
+          db,
+          systemClock,
+          rankingOf(config.criteria, { current: config.key }),
+          {},
+        ).flatMap((r) => (!r.stale && r.score !== null ? [r.score] : []));
+        const inFlight = inFlightApps(db, config, domains);
+        return {
+          signal: {
+            strong: stats.matches.strong,
+            maybe: stats.matches.maybe,
+            weak: stats.matches.weak,
+            matches: stats.matches.strong + stats.matches.maybe,
+            scored: stats.scored.current,
+          },
+          today: { newToday: stats.newLastDay, followUpsDue: stats.apply.followUpsDue },
+          funnel: dashboardFunnel(stats),
+          boards: stats.boards,
+          searchOnly: stats.searchOnly,
+          sector: dashboardSector(placesOf(config.criteria), stats.where),
+          inWhere: stats.inWhere
+            ? { strong: stats.inWhere.strong, maybe: stats.inWhere.maybe }
+            : { strong: 0, maybe: 0 },
+          inFlight,
+          openCount: inFlight.length,
+          needAction: inFlight.filter((a) => a.needsAction).length,
+          apply: stats.apply,
+          fill: stats.fill.byAts.map((a) => ({
+            ats: a.ats,
+            pct: a.fields > 0 ? Math.round((a.filled / a.fields) * 100) : 0,
+            forms: a.forms,
+          })),
+          time: { medianMinutes: stats.time.medianMinutes, submissions: stats.time.submissions },
+          spend: {
+            modelCalls: stats.spend.modelCalls,
+            usd: stats.spend.estimatedUsd,
+            sources: stats.spend.sources.map((s) => ({
+              name: s.name,
+              calls: s.calls,
+              budget: s.budget,
+              ...(s.credits != null ? { credits: s.credits } : {}),
+              ...(s.creditBudget != null ? { creditBudget: s.creditBudget } : {}),
+            })),
+          },
+          logos: stats.logos,
+          scored: stats.scored,
+          scores,
+          thresholds: {
+            strong: config.criteria.bands.strong,
+            maybe: config.criteria.bands.maybe,
+          },
+        };
+      }),
+    EMPTY_DASHBOARD,
   );
 }
 
@@ -946,8 +1218,19 @@ export function getSettings(route: 'profile'): SettingsDataFor<'profile'>;
 export function getSettings(route: 'answers'): SettingsDataFor<'answers'>;
 export function getSettings(route: 'self-id'): SettingsDataFor<'self-id'>;
 export function getSettings(route: 'preferences'): SettingsDataFor<'preferences'>;
+export function getSettings(route: 'companies'): SettingsDataFor<'companies'>;
 export function getSettings(route: SettingsRoute): SettingsData {
   try {
+    if (route === 'companies') {
+      const criteria = loadConfigFile('criteria', criteriaSchema, DEFAULT_CONFIG_DIR);
+      const names = criteria.target_companies ?? [];
+      const report = orEmpty(() => withDb((db) => targetCompanyReport(db, names)), {
+        openJobs: 0,
+        unscoredJobs: 0,
+        unseen: [...names],
+      });
+      return { ok: true, route, text: names.join('\n'), report };
+    }
     if (route === 'preferences') {
       return {
         ok: true,

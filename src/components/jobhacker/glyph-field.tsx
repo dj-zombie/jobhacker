@@ -17,7 +17,8 @@ const LEVELS = 6;
  * masked window moving one way over the lit copy, which moves the other way by
  * the same amount, so the glyphs hold still and the loop runs on the compositor.
  * The beam pauses while the field is off screen, and while `data-hold` is set on
- * it through `ref` (the header holds it while jobs change fast). It is hidden
+ * it through `ref` (the header holds it while jobs change fast, and while an
+ * acquire plays). It is hidden
  * under reduced motion.
  */
 export function GlyphField({

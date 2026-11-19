@@ -40,6 +40,8 @@ export interface ApplicationWrite {
   answers?: Record<string, string> | null;
   /** The apply-assist fill report (labels + sources only, never field values). */
   fillReport?: unknown;
+  /** The employer's own application link (J29). Written only by `setApplyLink`. */
+  applyUrl?: string | null;
   submittedAt?: string | null;
   followUpAt?: string | null;
   notes?: string | null;
@@ -135,6 +137,7 @@ export function applicationsRepo(db: Db, clock: Clock) {
             coverNote: write.coverNote ?? null,
             answers: write.answers ?? null,
             fillReport: write.fillReport ?? null,
+            applyUrl: write.applyUrl ?? null,
             submittedAt: write.submittedAt ?? null,
             followUpAt: write.followUpAt ?? null,
             notes: write.notes ?? null,
@@ -154,6 +157,7 @@ export function applicationsRepo(db: Db, clock: Clock) {
       if (write.coverNote !== undefined) patch.coverNote = write.coverNote;
       if (write.answers !== undefined) patch.answers = write.answers;
       if (write.fillReport !== undefined) patch.fillReport = write.fillReport;
+      if (write.applyUrl !== undefined) patch.applyUrl = write.applyUrl;
       if (write.submittedAt !== undefined) patch.submittedAt = write.submittedAt;
       if (write.followUpAt !== undefined) patch.followUpAt = write.followUpAt;
       if (write.notes !== undefined) patch.notes = write.notes;

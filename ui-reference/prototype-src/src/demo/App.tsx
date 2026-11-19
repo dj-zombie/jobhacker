@@ -15,6 +15,7 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
+  SquareTerminal,
 } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -39,6 +40,7 @@ import { demoLogoUrl } from "./logos";
 import { initialState, inWhere, rank, bandFor, reducer, type Action, type State } from "./model";
 import { companyLogoRows, logosMissing, useLogoOverrides, useLogoPicker } from "./logo-store";
 import { navigate, usePath } from "./router";
+import { DashboardView } from "./views/DashboardView";
 import { TriageView } from "./views/TriageView";
 import { ApplicationsView } from "./views/ApplicationsView";
 import { CompanyLogosView } from "./views/CompanyLogosView";
@@ -295,9 +297,12 @@ export function App() {
       if (b === "strong") strong++;
       else if (b === "maybe") maybe++;
     }
-    const inProgress = state.apps.filter((a) => a.status === "prepped").length;
+    const inProgress = state.apps.filter((a) => a.status === "prepped" || a.status === "interviewing").length;
     const submitted = state.apps.filter((a) => a.status === "submitted").length;
-    return { matches: strong + maybe, fresh, shortlist, inProgress, submitted };
+    const followUps = state.apps.filter(
+      (a) => a.task != null && (a.task.due === "today" || a.task.due === "overdue"),
+    ).length;
+    return { matches: strong + maybe, fresh, shortlist, inProgress, submitted, followUps };
   }, [state.jobs, state.weights, state.thresholds, state.apps, state.where]);
 
   const activeHref = path.startsWith("/applications")
@@ -308,9 +313,13 @@ export function App() {
 
   const sections: NavSection[] = [
     {
+      label: "Command",
+      items: [{ href: "/", label: "Dashboard", icon: SquareTerminal }],
+    },
+    {
       label: "Triage",
       items: [
-        { href: "/", label: "Top matches", icon: Sparkles, count: formatCount(counts.matches), countTone: "brand" },
+        { href: "/matches", label: "Top matches", icon: Sparkles, count: formatCount(counts.matches), countTone: "brand" },
         { href: "/new", label: "New today", icon: Inbox, count: formatCount(counts.fresh) },
         { href: "/shortlist", label: "Shortlist", icon: Bookmark, count: counts.shortlist || undefined },
         { href: "/unscored", label: "Unscored", icon: CircleDashed, count: formatCompact(state.unscoredCount) },
@@ -321,7 +330,13 @@ export function App() {
       items: [
         { href: "/applications", label: "In progress", icon: FileText, count: counts.inProgress },
         { href: "/applications/submitted", label: "Submitted", icon: Send, count: counts.submitted },
-        { href: "/applications/follow-ups", label: "Follow-ups", icon: BellRing, count: 0 },
+        {
+          href: "/applications/follow-ups",
+          label: "Follow-ups",
+          icon: BellRing,
+          count: counts.followUps || undefined,
+          countTone: counts.followUps ? "brand" : undefined,
+        },
       ],
     },
     {
@@ -386,7 +401,7 @@ export function App() {
           hint: `${j.company} · ${score}`,
           icon: <CompanyLogo name={j.company} src={demoLogoUrl(j.company)} size={20} />,
           onSelect: () => {
-            navigate("/");
+            navigate("/matches");
             if (!inWhere(j, state.where)) dispatch({ type: "where", where: [] });
             dispatch({ type: "segment", segment: bandFor(score, state.thresholds) === "no" ? "weak" : "matches" });
             dispatch({ type: "select", view: "top", id: j.id });
@@ -397,7 +412,8 @@ export function App() {
       {
         heading: "Go to",
         items: [
-          { id: "go-top", label: "Top matches", icon: <Sparkles className="size-4 text-fg-3" />, onSelect: () => navigate("/") },
+          { id: "go-dash", label: "Dashboard", keywords: ["home", "command", "recon", "overview"], icon: <SquareTerminal className="size-4 text-fg-3" />, onSelect: () => navigate("/") },
+          { id: "go-top", label: "Top matches", icon: <Sparkles className="size-4 text-fg-3" />, onSelect: () => navigate("/matches") },
           { id: "go-new", label: "New today", icon: <Inbox className="size-4 text-fg-3" />, onSelect: () => navigate("/new") },
           { id: "go-short", label: "Shortlist", icon: <Bookmark className="size-4 text-fg-3" />, onSelect: () => navigate("/shortlist") },
           { id: "go-unscored", label: "Unscored", icon: <CircleDashed className="size-4 text-fg-3" />, onSelect: () => navigate("/unscored") },
@@ -415,7 +431,7 @@ export function App() {
             icon: <SlidersHorizontal className="size-4 text-fg-3" />,
             shortcut: ["T"],
             onSelect: () => {
-              navigate("/");
+              navigate("/matches");
               dispatch({ type: "tune", open: true });
             },
           },
@@ -439,7 +455,8 @@ export function App() {
   }, [state.jobs, state.weights, state.thresholds, state.density, state.where, runScout]);
 
   let view: React.ReactNode;
-  if (path === "/") view = <TriageView key="top" view="top" />;
+  if (path === "/") view = <DashboardView key="dashboard" />;
+  else if (path === "/matches") view = <TriageView key="top" view="top" />;
   else if (path === "/new") view = <TriageView key="new" view="new" />;
   else if (path === "/shortlist") view = <TriageView key="shortlist" view="shortlist" />;
   else if (path === "/unscored") view = <TriageView key="unscored" view="unscored" />;

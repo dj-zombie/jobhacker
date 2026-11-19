@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseDocument, parse as parseYaml } from 'yaml';
+import { normalizeCompanyName } from '../util/hash.js';
 import { ConfigError } from './errors.js';
 import {
   type Bands,
@@ -10,6 +11,8 @@ import {
   criteriaSchema,
   weightsSchema,
 } from './schemas.js';
+import { type ConfigWriteDeps, backupConfigFile, writeFileAtomic } from './write.js';
+import { editYamlText, sameYaml } from './yaml-edit.js';
 
 export interface SavedRanking {
   weights: Weights;
@@ -114,4 +117,105 @@ function parseYamlSafe(text: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+/** Far more names than a personal list. A guard against a runaway paste. */
+const MAX_TARGET_COMPANIES = 200;
+const MAX_TARGET_NAME = 200;
+
+export interface SavedTargetCompanies {
+  names: string[];
+  changed: boolean;
+  /** Where the previous file was copied, or null when nothing was written. */
+  backup: string | null;
+}
+
+/**
+ * One company per line. Blank lines are dropped. The same name after
+ * normalization is kept once, in the spelling of its first line.
+ */
+export function parseTargetCompanies(text: string): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const name = raw.trim();
+    if (!name) continue;
+    if (name.length > MAX_TARGET_NAME) {
+      throw new ConfigError('criteria.yaml', [
+        `companies: "${name.slice(0, 40)}" is longer than ${MAX_TARGET_NAME} characters`,
+      ]);
+    }
+    const key = normalizeCompanyName(name);
+    if (!key) {
+      throw new ConfigError('criteria.yaml', [`companies: "${name}" is not a company name`]);
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  if (names.length > MAX_TARGET_COMPANIES) {
+    throw new ConfigError('criteria.yaml', [`companies: at most ${MAX_TARGET_COMPANIES} names`]);
+  }
+  return names;
+}
+
+function sameNames(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((name, i) => name === b[i]);
+}
+
+/**
+ * Write `target_companies` into `criteria.yaml` (J27). Comments and the other
+ * keys stay. The same list writes nothing. Nothing is written until the result
+ * parses and validates.
+ */
+export function saveTargetCompanies(
+  dir: string,
+  names: readonly string[],
+  deps: ConfigWriteDeps,
+): SavedTargetCompanies {
+  const file = join(dir, 'criteria.yaml');
+  const original = readFileSync(file, 'utf8');
+  const doc = parseDocument(original);
+  if (doc.errors.length > 0) {
+    throw new ConfigError(
+      file,
+      doc.errors.map((e) => `YAML parse error: ${e.message}`),
+    );
+  }
+  const current = criteriaSchema.safeParse(doc.toJS());
+  if (!current.success) {
+    throw new ConfigError(
+      file,
+      current.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
+    );
+  }
+  const stored = current.data.target_companies ?? [];
+  if (sameNames(stored, names)) return { names: stored, changed: false, backup: null };
+
+  const plain = { ...(doc.toJS() as Record<string, unknown>), target_companies: [...names] };
+  const check = criteriaSchema.safeParse(plain);
+  if (!check.success) {
+    throw new ConfigError(
+      file,
+      check.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
+    );
+  }
+
+  let text = editYamlText(original, plain);
+  if (text === null) {
+    doc.setIn(['target_companies'], [...names]);
+    const rewritten = doc.toString();
+    text = sameYaml(rewritten, plain) ? rewritten : null;
+  }
+  if (text === null) {
+    throw new ConfigError(file, ['target_companies: the file could not be edited in place']);
+  }
+  const written = criteriaSchema.safeParse(parseYamlSafe(text));
+  if (!written.success || !sameNames(written.data.target_companies ?? [], names)) {
+    throw new ConfigError(file, ['target_companies: the edited file did not validate']);
+  }
+
+  const backup = backupConfigFile(file, deps);
+  writeFileAtomic(file, text);
+  return { names: [...names], changed: true, backup };
 }

@@ -2,6 +2,7 @@ import type { Bands, Weights } from '../config/schemas.js';
 import type { Db } from '../db/client.js';
 import type { Verdict } from '../db/schema.js';
 import type { Clock } from '../util/clock.js';
+import { companyOnList } from '../util/company-match.js';
 import { rankJobs } from './rank.js';
 import type { ScoringKey } from './score.js';
 import { toDimensions } from './triage-view.js';
@@ -29,13 +30,20 @@ export interface PaletteJobRow {
 export function paletteJobs(
   db: Db,
   clock: Clock,
-  options: { key: ScoringKey; weights: Weights; bands: Bands },
+  options: {
+    key: ScoringKey;
+    weights: Weights;
+    bands: Bands;
+    targetCompanies?: readonly string[];
+  },
 ): PaletteJobRow[] {
+  const list = options.targetCompanies ?? [];
   const rows = triageRows(db, clock, 'top', options.key).filter((row) => row.dims !== null);
   const ranked = rankJobs(
     rows.map((row) => ({
       ...row,
       dimensions: toDimensions(row.dims ?? []),
+      target: companyOnList(row.company, list) !== null,
     })),
     options.weights,
     options.bands,

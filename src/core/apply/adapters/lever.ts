@@ -1,3 +1,4 @@
+import { urlIsOn } from '../../util/host.js';
 import type { SafePage } from '../safe-page.js';
 import type { FormAdapter, RawFormField } from '../types.js';
 
@@ -15,7 +16,7 @@ export const leverAdapter: FormAdapter = {
   ats: 'lever',
 
   canHandle(url: string): boolean {
-    return /lever\.co/i.test(url);
+    return urlIsOn(url, ['lever.co']);
   },
 
   async detectFields(page: SafePage): Promise<RawFormField[]> {

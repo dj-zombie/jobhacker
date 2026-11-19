@@ -168,4 +168,65 @@ describe('jobsRepo.upsert content-hash status reset (Known issue [2])', () => {
       ['pending', false],
     ]);
   });
+
+  it('takes a not-yet-current listed company first inside a tier, and leaves a current one put', () => {
+    const { db, clock, companyId } = setup();
+    const repo = jobsRepo(db);
+    const nikeId = companiesRepo(db, clock).upsert({
+      name: 'Nike',
+      ats: 'greenhouse',
+      token: 'nike',
+      active: true,
+      tags: [],
+    }).id;
+    const write = (
+      owner: number,
+      externalId: string,
+      prescore: number,
+      state: 'pending' | 'current',
+    ) => {
+      repo.upsert(
+        {
+          ...baseWrite(owner, `hash-${externalId}`),
+          externalId,
+          title: externalId,
+          dedupeKey: `dedupe-${externalId}`,
+        },
+        clock.now(),
+      );
+      db.update(jobs)
+        .set({
+          gateResult: { passed: true, gate: null, detail: null },
+          scoreState: state,
+          prescore,
+        })
+        .where(eq(jobs.externalId, externalId))
+        .run();
+    };
+    write(companyId, 'acme-high', 0.9, 'pending');
+    write(nikeId, 'nike-low', 0.1, 'pending');
+    expect(repo.listScorable({ targets: ['Nike'] }).map((job) => job.title)).toEqual([
+      'nike-low',
+      'acme-high',
+    ]);
+
+    const key = { rubricVersion: 'r1', model: 'm', profileHash: 'p', preferencesHash: 'q' };
+    const nikeJob = repo.find('greenhouse', 'nike-low');
+    if (!nikeJob) throw new Error('nike job missing');
+    db.update(jobs).set({ scoreState: 'current' }).where(eq(jobs.id, nikeJob.id)).run();
+    scoresRepo(db, clock).insert({
+      ...key,
+      jobId: nikeJob.id,
+      contentHash: nikeJob.contentHash,
+      dimensions: scoreOutput().dimensions,
+      summary: 's',
+      redFlags: [],
+      score: 80,
+      verdict: 'strong',
+    });
+    expect(repo.listScorable({ key, targets: ['Nike'] }).map((job) => job.title)).toEqual([
+      'acme-high',
+      'nike-low',
+    ]);
+  });
 });

@@ -33,6 +33,8 @@ export interface DemoJob {
   redFlags?: string[];
   description?: string;
   kind?: "frontend" | "fullstack" | "backend" | "platform" | "lead" | "other";
+  /** One industry for the company, suggested or confirmed. Absent means none. */
+  industry?: { id: "games" | "audio" | "devtools"; status: "suggested" | "confirmed" };
 }
 
 export const STATS = {
@@ -45,7 +47,90 @@ export const STATS = {
   lastRun: "1:42 AM",
   newLastRun: 40,
   llmCalls: 1471,
+
+  /*
+    Dashboard aggregates. Modeled on a real `pnpm cli stats` usefulness snapshot, scaled to the
+    prototype's own fictional totals (11,374 jobs, 336 boards, 1,108 scored). The app's real
+    dashboard reads these same shapes from core's computeStats() instead. Illustrative only.
+  */
+  newToday: 312,
+  // The four gates, summing to `gated` (241). Only closed and duplicate ever fire here.
+  gatedBy: { closed: 29, duplicate: 212, blocklist: 0, age: 0 },
+  // Of the 1,108 scored: current under the live cache key, and stale under an older one.
+  scoredCurrent: 1103,
+  scoredStale: 5,
+  // Match bands over the current scores, summing to scoredCurrent (1,103).
+  bands: { strong: 68, maybe: 284, weak: 751 },
+  // Active boards by ATS, summing to `boards` (336). The scan report reads this.
+  boardsByAts: [
+    { ats: "greenhouse", count: 196 },
+    { ats: "ashby", count: 92 },
+    { ats: "lever", count: 34 },
+    { ats: "smartrecruiters", count: 8 },
+    { ats: "breezy", count: 4 },
+    { ats: "polymer", count: 2 },
+  ],
+  // Open jobs whose only record came from a search source: what search adds beyond the boards.
+  searchOnly: {
+    total: 182,
+    bySource: [
+      { source: "hn", count: 120 },
+      { source: "jsearch", count: 48 },
+      { source: "jobspipe", count: 14 },
+    ],
+  },
+  // Open jobs past the gates per area, summed to `passed` (a job counts once, by its first area).
+  where: { portland: 58, phoenix: 152, remote: 1930, elsewhere: 8993 },
+  // Strong and maybe within where_default {portland, phoenix, remote}.
+  inWhere: { strong: 68, maybe: 284 },
+  // The application pipeline, and follow-ups due today.
+  apply: { prepared: 8, filled: 7, submitted: 3, followUpsDue: 2 },
+  // Fields filled per ATS across the last reports, as a percentage. Target is 80%.
+  fill: [
+    { ats: "smartrecruiters", pct: 55, forms: 4 },
+    { ats: "ashby", pct: 79, forms: 3 },
+    { ats: "jsearch", pct: 11, forms: 2 },
+    { ats: "hn", pct: 0, forms: 1 },
+  ],
+  // Median minutes from shortlisted to marked submitted. Target is under 5.
+  time: { medianMinutes: 6, submissions: 3 },
+  // This month's spend and metered-source budgets.
+  spend: {
+    modelCalls: 584,
+    usd: 9.08,
+    sources: [
+      { name: "jsearch", calls: 36, budget: 200 },
+      { name: "jobspipe", calls: 13, budget: 200, credits: 104, creditBudget: 1000 },
+    ],
+  },
+  // The logo set: companies with a Strong or Maybe job, how many have a domain, how many confirmed.
+  logos: { companies: 139, withDomain: 127, confirmed: 42 },
 };
+
+/**
+ * A fictional 0–100 score distribution for the dashboard's "signal spectrum" histogram.
+ * Right-skewed low (most postings are noise), with a thin tail into Maybe and Strong, so the
+ * band threshold lines read. Generated once from a fixed seed, so it's stable across renders.
+ */
+function makeScoreSample(): number[] {
+  let seed = 0x9e3779b9;
+  const rnd = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const out: number[] = [];
+  const band = (n: number, lo: number, hi: number) => {
+    for (let i = 0; i < n; i++) out.push(Math.round(lo + rnd() * (hi - lo)));
+  };
+  band(150, 6, 47); // weak lump
+  band(70, 48, 71); // maybe
+  band(20, 72, 96); // strong tail
+  return out;
+}
+
+export const SCORE_SAMPLE: number[] = makeScoreSample();
 
 export const DEFAULT_WEIGHTS: Weights = { role: 6, tech: 2, domain: 2, seniority: 2, logistics: 4, comp: 1 };
 export const DEFAULT_THRESHOLDS = { strong: 72, maybe: 48 };
@@ -954,6 +1039,24 @@ export function descriptionFor(job: DemoJob): string {
 
 export type AppStatus = "prepped" | "submitted" | "interviewing" | "offer" | "rejected";
 
+/** The latest move on an application: who acted last (you, or the employer), what it was, and when. */
+export interface AppContact {
+  dir: "you" | "them";
+  label: string;
+  at: string;
+}
+
+/**
+ * Something the employer is waiting on from you — a follow-up, a document they asked for, a time to
+ * confirm. `due` drives the urgency accent on the dashboard; a today/overdue task "needs action".
+ */
+export interface AppTask {
+  kind: "followup" | "send" | "confirm";
+  label: string;
+  due: "overdue" | "today" | "soon";
+  dueLabel: string;
+}
+
 export interface DemoApp {
   id: string;
   jobId: string;
@@ -961,14 +1064,184 @@ export interface DemoApp {
   updatedLabel: string;
   submittedLabel?: string;
   followUpLabel?: string;
+  /** Last interaction with the employer, newest known. */
+  contact?: AppContact;
+  /** An open action you owe them. Drives the dashboard's follow-up emphasis. */
+  task?: AppTask;
 }
 
+/*
+  Five applications in flight, as the dashboard shows them: where each sits in the process, the last
+  back-and-forth with the employer, and anything they're waiting on from Kris. Two need action today
+  (Discord's code sample, Canva's follow-up), matching STATS.apply.followUpsDue.
+*/
 export const APPS: DemoApp[] = [
-  { id: "linear", jobId: "linear-fs", status: "prepped", updatedLabel: "Today, 7:34 PM" },
-  { id: "canva", jobId: "canva", status: "submitted", updatedLabel: "Today, 9:12 AM", submittedLabel: "Oct 24", followUpLabel: "Oct 31" },
-  { id: "mozilla", jobId: "mozilla-sse", status: "prepped", updatedLabel: "Yesterday" },
-  { id: "discord", jobId: "discord", status: "prepped", updatedLabel: "Yesterday" },
-  { id: "spotify", jobId: "spotify", status: "prepped", updatedLabel: "Oct 22" },
+  {
+    id: "discord",
+    jobId: "discord",
+    status: "interviewing",
+    updatedLabel: "Today, 2:10 PM",
+    submittedLabel: "Oct 21",
+    contact: { dir: "them", label: "Recruiter replied", at: "2h ago" },
+    task: { kind: "send", label: "Send the code sample they asked for", due: "today", dueLabel: "today" },
+  },
+  {
+    id: "canva",
+    jobId: "canva",
+    status: "submitted",
+    updatedLabel: "Today, 9:12 AM",
+    submittedLabel: "Oct 24",
+    followUpLabel: "Oct 31",
+    contact: { dir: "you", label: "You submitted", at: "Oct 24" },
+    task: { kind: "followup", label: "Follow up — no reply in two weeks", due: "today", dueLabel: "today" },
+  },
+  {
+    id: "linear",
+    jobId: "linear-fs",
+    status: "prepped",
+    updatedLabel: "Today, 7:34 PM",
+    contact: { dir: "you", label: "You prepared it in Chrome", at: "7:34 PM" },
+  },
+  {
+    id: "spotify",
+    jobId: "spotify",
+    status: "submitted",
+    updatedLabel: "Oct 22",
+    submittedLabel: "Oct 22",
+    contact: { dir: "you", label: "You submitted", at: "Oct 22" },
+    task: { kind: "followup", label: "Follow up on your application", due: "soon", dueLabel: "in 4 days" },
+  },
+  {
+    id: "mozilla",
+    jobId: "mozilla-sse",
+    status: "prepped",
+    updatedLabel: "Yesterday",
+    contact: { dir: "you", label: "You prepared it in Chrome", at: "yesterday" },
+  },
+];
+
+/** A search hit's apply link on the employer's own site, as the Nothing to fill notice lists it. */
+export interface DemoApplyLink {
+  publisher: string;
+  host: string;
+  url: string;
+  direct: boolean;
+}
+
+/**
+ * Three applications that exist only for frames 54, 54c and 55 (J29), reached
+ * with `?at=/applications/<id>`. They aren't in APPS, so no list, count or other
+ * frame changes. Every company and host is fictional; `.example` hosts never resolve.
+ */
+export interface NoticeFrame {
+  app: DemoApp;
+  job: DemoJob;
+  /** `job-board`: Open & fill stops before Chrome. `no-form`: the page had no form. */
+  kind: "job-board" | "no-form";
+  host: string;
+  /** Links on the employer's own site. */
+  links: DemoApplyLink[];
+  /** The search's other links for the job, not shown: job boards, or not tied to the employer. */
+  otherLinks: number;
+  /** False when the search listed a placeholder ("Remote") instead of an employer. */
+  employerNamed: boolean;
+}
+
+/** Hosts the prototype treats as job boards when a link is pasted. */
+export const DEMO_JOB_BOARDS = ["wingtipjobs.example", "prosewarejobs.example", "litwaretalent.example"];
+
+export const NOTICE_FRAMES: NoticeFrame[] = [
+  {
+    kind: "job-board",
+    host: "wingtipjobs.example",
+    app: {
+      id: "tailspin",
+      jobId: "tailspin-fe",
+      status: "prepped",
+      updatedLabel: "Today, 10:05 AM",
+      contact: { dir: "you", label: "You prepared it", at: "10:05 AM" },
+    },
+    job: {
+      id: "tailspin-fe",
+      company: "Tailspin Toys",
+      title: "Senior Frontend Engineer",
+      location: "United States",
+      remote: "remote",
+      employment: "Full-time",
+      postedLabel: "Nov 9",
+      ageHours: 40,
+      prescore: 0.61,
+      state: "prepped",
+      kind: "frontend",
+      dims: [4, 4, 3, 4, 5, null],
+    },
+    links: [
+      {
+        publisher: "Tailspin Toys",
+        host: "careers.tailspintoys.example",
+        url: "https://careers.tailspintoys.example/jobs/4127",
+        direct: true,
+      },
+    ],
+    otherLinks: 2,
+    employerNamed: true,
+  },
+  {
+    kind: "job-board",
+    host: "wingtipjobs.example",
+    app: {
+      id: "nameless",
+      jobId: "nameless-fe",
+      status: "prepped",
+      updatedLabel: "Today, 10:40 AM",
+      contact: { dir: "you", label: "You prepared it", at: "10:40 AM" },
+    },
+    job: {
+      id: "nameless-fe",
+      company: "Employer not named",
+      title: "Senior Frontend Engineer (React)",
+      location: "United States",
+      remote: "remote",
+      employment: "Full-time",
+      postedLabel: "Nov 10",
+      ageHours: 22,
+      prescore: 0.57,
+      state: "prepped",
+      kind: "frontend",
+      dims: [4, 4, 3, 4, 5, null],
+    },
+    links: [],
+    otherLinks: 7,
+    employerNamed: false,
+  },
+  {
+    kind: "no-form",
+    host: "contoso.example",
+    app: {
+      id: "contoso",
+      jobId: "contoso-staff",
+      status: "prepped",
+      updatedLabel: "Today, 11:20 AM",
+      contact: { dir: "you", label: "You opened it in Chrome", at: "11:20 AM" },
+    },
+    job: {
+      id: "contoso-staff",
+      company: "Contoso",
+      title: "Staff Frontend Engineer",
+      location: "Phoenix, AZ",
+      remote: "hybrid",
+      employment: "Full-time",
+      postedLabel: "Nov 8",
+      ageHours: 64,
+      prescore: 0.58,
+      state: "prepped",
+      kind: "frontend",
+      dims: [4, 3, 3, 4, 4, null],
+    },
+    links: [],
+    otherLinks: 0,
+    employerNamed: true,
+  },
 ];
 
 const TELL_US_MORE = `The project I led end to end is Loopwell, a collaborative music sequencer that runs in the browser. The problem was that existing tools made sharing a work-in-progress track slow and lossy, so I made real-time collaboration the core of the product. I built the client in TypeScript and React on a Web Audio engine, with a Go sync service, PostgreSQL for projects, object storage for samples, and Stripe for billing. The hardest tradeoff was conflict resolution: I designed an operation log with per-track ordering, idempotent replays, and server-side snapshots, so two people editing the same pattern never lose work. I also built OAuth sign-in, shareable project links, and offline editing with background sync, then shipped the public beta to its first thousand users.`;

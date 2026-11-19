@@ -8,18 +8,19 @@ import { applicationsRepo } from '../db/repo/applications.js';
 import { companiesRepo } from '../db/repo/companies.js';
 import { eventsRepo } from '../db/repo/events.js';
 import { jobsRepo } from '../db/repo/jobs.js';
+import { FakeLlm } from '../llm/fake.js';
+import type { ApplyOption } from '../sources/types.js';
+import { testCriteria } from '../testing/fixtures.js';
 import { type Clock, fixedClock } from '../util/clock.js';
 import { nullLogger } from '../util/logger.js';
 import {
-  FILLABLE_ATS,
   FOLLOW_UP_DAYS,
   PROVIDED_RESUME,
+  applyPlanFor,
   attachedResume,
   markSubmitted,
   namedResume,
-  resolveApplyUrl,
   runApply,
-  selectAdapter,
 } from './apply.js';
 import { ApplyError } from './types.js';
 
@@ -79,87 +80,49 @@ function seedJob(db: Db, clock: Clock, ats: Ats, applyUrl: string | null): numbe
   return jobsRepo(db).find(ats, 'job-1')?.id ?? 0;
 }
 
+/** A JSearch hit stored under a placeholder employer, as JobLeads listings are. */
+function seedSearchJob(
+  db: Db,
+  clock: Clock,
+  applyUrl: string,
+  applyOptions: ApplyOption[] | null,
+): number {
+  const companyId = companiesRepo(db, clock).upsert({
+    name: 'Remote',
+    ats: 'jsearch',
+    token: 'remote',
+    active: true,
+    tags: [],
+  }).id;
+  jobsRepo(db).upsert(
+    {
+      companyId,
+      ats: 'jsearch',
+      externalId: 'js-1',
+      title: 'Senior Frontend Engineer',
+      locationRaw: 'Remote, US',
+      remoteType: 'remote',
+      employmentType: 'full_time',
+      url: applyUrl,
+      applyUrl,
+      applyOptions,
+      descriptionText: 'Build things.',
+      compMin: null,
+      compMax: null,
+      compCurrency: null,
+      postedAt: null,
+      contentHash: 'hash-js',
+      dedupeKey: 'dk-js',
+      sourceKind: 'search',
+      sourceName: 'jsearch',
+      sourceQuality: 'medium',
+    },
+    clock.now(),
+  );
+  return jobsRepo(db).find('jsearch', 'js-1')?.id ?? 0;
+}
+
 const deps = (db: Db, clock: Clock) => ({ db, clock, log: nullLogger(), profile: profile() });
-
-describe('resolveApplyUrl', () => {
-  it('keeps a Greenhouse URL that is already on greenhouse.io', () => {
-    expect(
-      resolveApplyUrl({
-        ats: 'greenhouse',
-        url: 'https://job-boards.greenhouse.io/discord/jobs/8214127002',
-        applyUrl: null,
-        externalId: '8214127002',
-        boardToken: 'discord',
-      }),
-    ).toBe('https://job-boards.greenhouse.io/discord/jobs/8214127002');
-  });
-
-  it('opens the Greenhouse embed when the stored URL is a company career page', () => {
-    // Stripe's absolute_url is stripe.com and that page has no application form.
-    expect(
-      resolveApplyUrl({
-        ats: 'greenhouse',
-        url: 'https://stripe.com/jobs/search?gh_jid=8172510',
-        applyUrl: null,
-        externalId: '8172510',
-        boardToken: 'stripe',
-      }),
-    ).toBe('https://job-boards.greenhouse.io/embed/job_app?for=stripe&token=8172510');
-  });
-
-  it('opens the SmartRecruiters easy-apply form instead of the job ad', () => {
-    const ad = 'https://jobs.smartrecruiters.com/Canva/6000000001468836';
-    expect(
-      resolveApplyUrl({
-        ats: 'smartrecruiters',
-        url: ad,
-        applyUrl: ad,
-        externalId: '6000000001468836',
-        boardToken: 'canva',
-      }),
-    ).toBe(`${ad}?oga=true`);
-  });
-
-  it('leaves a SmartRecruiters easy-apply URL alone', () => {
-    const form = 'https://jobs.smartrecruiters.com/oneclick-ui/company/Canva/publication/abc';
-    expect(
-      resolveApplyUrl({
-        ats: 'smartrecruiters',
-        url: form,
-        applyUrl: form,
-        externalId: 'abc',
-        boardToken: 'canva',
-      }),
-    ).toBe(form);
-  });
-
-  it('prefers an explicit apply URL for Lever and Ashby', () => {
-    expect(
-      resolveApplyUrl({
-        ats: 'lever',
-        url: 'https://jobs.lever.co/spotify/abc',
-        applyUrl: 'https://jobs.lever.co/spotify/abc/apply',
-        externalId: 'abc',
-        boardToken: 'spotify',
-      }),
-    ).toBe('https://jobs.lever.co/spotify/abc/apply');
-  });
-});
-
-describe('selectAdapter', () => {
-  it('returns an adapter for every ATS we ingest', () => {
-    expect(selectAdapter('greenhouse')?.ats).toBe('greenhouse');
-    expect(selectAdapter('lever')?.ats).toBe('lever');
-    expect(selectAdapter('ashby')?.ats).toBe('ashby');
-    for (const ats of FILLABLE_ATS) expect(selectAdapter(ats)?.ats).toBe(ats);
-  });
-
-  it('routes Ashby application URLs to the Ashby adapter', () => {
-    expect(
-      selectAdapter('ashby')?.canHandle('https://jobs.ashbyhq.com/linear/abc/application'),
-    ).toBe(true);
-  });
-});
 
 describe('runApply (no browser)', () => {
   it('throws ApplyError when the job has no application yet', async () => {
@@ -178,6 +141,101 @@ describe('runApply (no browser)', () => {
     const db = made.db;
     const clock = fixedClock('2026-10-22T12:00:00.000Z');
     await expect(runApply(deps(db, clock), { jobId: 999 })).rejects.toThrow(/job 999 not found/);
+  });
+
+  it('stops before Chrome on a JobLeads link: one fill_skipped event, no model call, no report', async () => {
+    const made = createMigratedTestDb();
+    sqlite = made.sqlite;
+    const db = made.db;
+    const clock = fixedClock('2026-11-11T12:00:00.000Z');
+    const jobleads = 'https://www.jobleads.com/us/job/senior-frontend-engineer--remote--e1';
+    const jobId = seedSearchJob(db, clock, jobleads, [
+      { publisher: 'JobLeads', url: jobleads, direct: false },
+      { publisher: 'LinkedIn', url: 'https://www.linkedin.com/jobs/view/1', direct: false },
+      { publisher: 'Initech Careers', url: 'https://careers.initech.example/jobs/9', direct: true },
+    ]);
+    const app = applicationsRepo(db, clock).upsertForJob({ jobId, answers: {} });
+    const llm = new FakeLlm();
+    let connects = 0;
+    const result = await runApply(
+      {
+        ...deps(db, clock),
+        llm,
+        criteria: testCriteria(),
+        connect: async () => {
+          connects += 1;
+          throw new Error('connectChrome must not be called');
+        },
+      },
+      { jobId },
+    );
+
+    expect(connects).toBe(0);
+    expect(llm.callCount).toBe(0);
+    expect(result.skipped).toEqual({ host: 'jobleads.com', publisher: 'JobLeads' });
+    expect(result.report).toBeUndefined();
+    const events = eventsRepo(db, clock);
+    expect(events.ofType('fill_skipped', app.id).map((e) => e.payload)).toEqual([
+      { host: 'jobleads.com', options: 3, direct: 1 },
+    ]);
+    expect(events.ofType('llm_usage')).toHaveLength(0);
+    expect(events.ofType('fill')).toHaveLength(0);
+    expect(applicationsRepo(db, clock).get(app.id)?.fillReport).toBeNull();
+  });
+
+  it("opens the employer's link Kris set instead of the job-board apply URL", async () => {
+    const made = createMigratedTestDb();
+    sqlite = made.sqlite;
+    const db = made.db;
+    const clock = fixedClock('2026-11-11T12:00:00.000Z');
+    const jobId = seedSearchJob(db, clock, 'https://www.jobleads.com/us/job/e1', null);
+    applicationsRepo(db, clock).upsertForJob({
+      jobId,
+      applyUrl: 'https://jobs.ashbyhq.com/initech/abc/application',
+    });
+    let connects = 0;
+    await expect(
+      runApply(
+        {
+          ...deps(db, clock),
+          connect: async () => {
+            connects += 1;
+            throw new Error('fake Chrome is not running');
+          },
+        },
+        { jobId },
+      ),
+    ).rejects.toThrow(/fake Chrome/);
+    expect(connects).toBe(1);
+    expect(eventsRepo(db, clock).ofType('fill_skipped')).toHaveLength(0);
+  });
+});
+
+describe('applyPlanFor', () => {
+  it('reads the job, its stored options and the employer link', () => {
+    const made = createMigratedTestDb();
+    sqlite = made.sqlite;
+    const db = made.db;
+    const clock = fixedClock('2026-11-11T12:00:00.000Z');
+    const jobId = seedSearchJob(db, clock, 'https://us.jooble.org/desc/1', [
+      { publisher: 'Jooble', url: 'https://us.jooble.org/desc/1', direct: false },
+    ]);
+    expect(applyPlanFor(db, clock, jobId)).toMatchObject({
+      kind: 'stop',
+      host: 'us.jooble.org',
+      publisher: 'Jooble',
+      options: [],
+    });
+    applicationsRepo(db, clock).upsertForJob({
+      jobId,
+      applyUrl: 'https://boards.greenhouse.io/initech/jobs/7',
+    });
+    expect(applyPlanFor(db, clock, jobId)).toEqual({
+      kind: 'open',
+      url: 'https://boards.greenhouse.io/initech/jobs/7',
+      adapter: 'greenhouse',
+      from: 'employer',
+    });
   });
 });
 

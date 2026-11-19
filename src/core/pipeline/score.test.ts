@@ -16,7 +16,7 @@ import {
 import { type Clock, fixedClock } from '../util/clock.js';
 import { nullLogger } from '../util/logger.js';
 import { rankedList } from './ranked.js';
-import { type ScoreDeps, scoreNewJobs, scoringInputs } from './score.js';
+import { SCORE_CONCURRENCY, type ScoreDeps, scoreNewJobs, scoringInputs } from './score.js';
 
 const NOW = '2026-10-23T12:00:00.000Z';
 const VALID = scoreOutput();
@@ -367,6 +367,113 @@ describe('scoreNewJobs', () => {
     );
     expect(result.stats).toMatchObject({ scored: 1, skipped_cap: 2 });
     expect(llm.callCount).toBe(1);
+  });
+
+  it('an explicit limit can raise the cap', async () => {
+    const { db, clock } = setup([
+      'Senior Frontend Engineer',
+      'Senior Fullstack Engineer',
+      'Staff Engineer',
+    ]);
+    const llm = new FakeLlm({ responder: () => VALID });
+
+    const result = await scoreNewJobs(
+      deps(db, clock, llm, { criteria: testCriteria({ cap: 1 }), limit: 3 }),
+    );
+    expect(result.stats).toMatchObject({ scored: 3, skipped_cap: 0 });
+    expect(llm.callCount).toBe(3);
+  });
+
+  it('onlyFirst scores jobs in the places and leaves the rest untouched', async () => {
+    const made = createMigratedTestDb();
+    sqlite = made.sqlite;
+    const clock = fixedClock(NOW);
+    const ids = seedJobs(made.db, clock, [
+      { title: 'Senior Frontend Engineer', locationRaw: 'Toronto, ON', remoteType: 'onsite' },
+      { title: 'Data Analyst', locationRaw: 'Portland, OR', remoteType: 'onsite' },
+    ]);
+    const llm = new FakeLlm({ responder: () => VALID });
+
+    const result = await scoreNewJobs(
+      deps(made.db, clock, llm, {
+        criteria: testCriteria({ cap: 1, withPlaces: true }),
+        limit: 10,
+        onlyFirst: true,
+      }),
+    );
+    expect(result.stats).toMatchObject({ scored: 1, skipped_cap: 0, scored_first: 1 });
+    expect(llm.callCount).toBe(1);
+    expect(llm.requests[0]?.user).toContain('Title: Data Analyst');
+    expect(scoreStateOf(made.db, ids[1] ?? 0)).toBe('current');
+    expect(scoreStateOf(made.db, ids[0] ?? 0)).toBe('pending');
+  });
+
+  it('keeps at most SCORE_CONCURRENCY calls in flight and still honors a raised cap', async () => {
+    const titles = [
+      'Senior Frontend Engineer',
+      'Staff Frontend Engineer',
+      'Senior Fullstack Engineer',
+      'Backend Engineer',
+      'Data Analyst',
+      'Product Engineer',
+      'Platform Engineer',
+      'Mobile Engineer',
+    ];
+    const { db, clock } = setup(titles);
+    let current = 0;
+    let peak = 0;
+    const llm = new FakeLlm({
+      responder: async () => {
+        current += 1;
+        peak = Math.max(peak, current);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        current -= 1;
+        return VALID;
+      },
+    });
+
+    const result = await scoreNewJobs(
+      deps(db, clock, llm, { criteria: testCriteria({ cap: 1 }), limit: titles.length }),
+    );
+    expect(result.stats).toMatchObject({ scored: titles.length, skipped_cap: 0 });
+    expect(llm.callCount).toBe(titles.length);
+    expect(peak).toBe(SCORE_CONCURRENCY);
+  });
+
+  it('a stop finishes calls already sent and starts no more', async () => {
+    const titles = [
+      'Senior Frontend Engineer',
+      'Staff Frontend Engineer',
+      'Senior Fullstack Engineer',
+      'Backend Engineer',
+      'Data Analyst',
+      'Product Engineer',
+      'Platform Engineer',
+      'Mobile Engineer',
+    ];
+    const { db, clock, ids } = setup(titles);
+    let started = 0;
+    const llm = new FakeLlm({
+      responder: async () => {
+        started += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return VALID;
+      },
+    });
+
+    const result = await scoreNewJobs(
+      deps(db, clock, llm, {
+        criteria: testCriteria({ cap: 1 }),
+        limit: titles.length,
+        shouldStop: () => started >= 2,
+      }),
+    );
+    expect(llm.callCount).toBe(2);
+    expect(result.stats).toMatchObject({ scored: 2, skipped_cap: 0 });
+    const states = ids.map((id) => scoreStateOf(db, id));
+    expect(states.filter((state) => state === 'current')).toHaveLength(2);
+    expect(states.filter((state) => state === 'run_cap')).toHaveLength(0);
+    expect(states.filter((state) => state === 'pending')).toHaveLength(titles.length - 2);
   });
 
   it('logs a llm_usage event per scored job and totals usage and cost', async () => {

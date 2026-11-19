@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
-import { PanelLeftClose, PanelLeftOpen, Search, type LucideIcon } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Search, Volume2, VolumeX, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { railBadgeText } from "@/lib/sidebar-preference";
 import { BrandMark } from "./brand-mark";
@@ -72,6 +72,37 @@ function SidebarToggle({
   );
 }
 
+/** Stored sound choice. The shell owns the state; this only draws the control. */
+function SoundToggle({
+  on,
+  onToggle,
+  collapsed,
+}: {
+  on: boolean;
+  onToggle: () => void;
+  collapsed: boolean;
+}) {
+  const label = on ? "Sounds on" : "Sounds off";
+  const Icon = on ? Volume2 : VolumeX;
+  return (
+    <Hint label={label} shortcut="M" side={collapsed ? "right" : "bottom"}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={on}
+        aria-label={on ? "Mute sounds" : "Unmute sounds"}
+        className={cn(
+          "inline-flex shrink-0 items-center justify-center rounded-md text-fg-4 outline-none transition-colors",
+          "hover:bg-surface-1 hover:text-fg focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-uv-hi",
+          collapsed ? "size-9" : "size-7",
+        )}
+      >
+        <Icon className="size-4" />
+      </button>
+    </Hint>
+  );
+}
+
 /**
  * App navigation. `collapsed` renders an icon rail (labels move into
  * tooltips, short counts into a chip). The active item's background and its
@@ -89,6 +120,8 @@ export function AppSidebar({
   onToggleCollapsed,
   user,
   brand = "JobHacker",
+  soundOn = true,
+  onToggleSound,
   className,
 }: {
   sections: NavSection[];
@@ -100,6 +133,9 @@ export function AppSidebar({
   onToggleCollapsed?: () => void;
   user?: { name: string; initials: string };
   brand?: string;
+  /** Stored choice. Omitted with `onToggleSound` where the shell has no player. */
+  soundOn?: boolean;
+  onToggleSound?: () => void;
   className?: string;
 }) {
   const navRef = React.useRef<HTMLElement>(null);
@@ -126,31 +162,40 @@ export function AppSidebar({
         className,
       )}
     >
-      <div className={cn("group/brand flex h-10 items-center gap-2.5", collapsed ? "justify-center" : "px-2")}>
+      <div className={cn("group/brand flex h-10 items-center gap-1.5", collapsed ? "justify-center" : "px-2")}>
         <BrandMark />
         {collapsed ? null : (
           <>
             <span
               data-text={brand}
-              className="glitch-text relative font-display text-[13px] font-semibold uppercase tracking-[0.06em] text-fg group-hover/brand:glitch-run"
+              className="glitch-text relative min-w-0 flex-1 truncate font-display text-[13px] font-semibold uppercase tracking-[0.06em] text-fg group-hover/brand:glitch-run"
             >
               {brand}
             </span>
-            {user ? (
-              <Hint label={user.name} side="bottom">
-                <span className="ml-auto inline-flex size-7 items-center justify-center rounded-full bg-surface-3 text-2xs font-semibold text-fg-2 ring-1 ring-line-2">
-                  {user.initials}
-                </span>
-              </Hint>
-            ) : null}
-            {onToggleCollapsed ? (
-              <span className={user ? undefined : "ml-auto"}>
+            <span className="ml-auto flex shrink-0 items-center gap-0.5">
+              {user ? (
+                <Hint label={user.name} side="bottom">
+                  <span className="inline-flex size-7 items-center justify-center rounded-full bg-surface-3 text-2xs font-semibold text-fg-2 ring-1 ring-line-2">
+                    {user.initials}
+                  </span>
+                </Hint>
+              ) : null}
+              {onToggleSound ? (
+                <SoundToggle on={soundOn} onToggle={onToggleSound} collapsed={false} />
+              ) : null}
+              {onToggleCollapsed ? (
                 <SidebarToggle collapsed={false} onToggle={onToggleCollapsed} />
-              </span>
-            ) : null}
+              ) : null}
+            </span>
           </>
         )}
       </div>
+
+      {collapsed && onToggleSound ? (
+        <div className="mt-2 flex justify-center">
+          <SoundToggle on={soundOn} onToggle={onToggleSound} collapsed />
+        </div>
+      ) : null}
 
       {collapsed && onToggleCollapsed ? (
         <div className="mt-2 hidden justify-center xl:flex">

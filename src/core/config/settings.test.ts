@@ -19,6 +19,7 @@ import {
   liveRunRefusal,
   savePreferencesSettings,
   saveProfileSettings,
+  saveTargetCompanySettings,
 } from './settings.js';
 import { scoringKeyOf } from './staleness.js';
 
@@ -200,5 +201,40 @@ describe('savePreferencesSettings', () => {
     const before = sha('preferences.md');
     expect(savePreferencesSettings(deps, 'Games.', true)).toMatchObject({ status: 'refused' });
     expect(sha('preferences.md')).toBe(before);
+  });
+});
+
+describe('saveTargetCompanySettings', () => {
+  it('saves the list without changing the scoring key, and reports matches', () => {
+    const { deps, db, clock } = setup();
+    const before = scoringKeyOf(loadAllConfig(dir));
+    const profile = sha('profile.yaml');
+    const saved = saveTargetCompanySettings(deps, 'Acme\nNope Inc\n');
+    expect(saved).toEqual({
+      status: 'saved',
+      changed: true,
+      value: 'Acme\nNope Inc',
+      report: { openJobs: 5, unscoredJobs: 1, unseen: ['Nope Inc'] },
+    });
+    expect(scoringKeyOf(loadAllConfig(dir))).toEqual(before);
+    expect(sha('profile.yaml')).toBe(profile);
+    expect(currentCount(db, clock)).toBe(4);
+    expect(backups()).toHaveLength(1);
+    expect(JSON.stringify(saved)).not.toContain(dir);
+
+    const again = saveTargetCompanySettings(deps, 'Acme\nNope Inc');
+    expect(again).toMatchObject({ status: 'saved', changed: false });
+    expect(backups()).toHaveLength(1);
+  });
+
+  it('refuses a name that is not a company and writes nothing', () => {
+    const { deps } = setup();
+    const before = sha('criteria.yaml');
+    const refused = saveTargetCompanySettings(deps, 'Inc.');
+    expect(refused).toMatchObject({
+      status: 'refused',
+      issues: ['companies: "Inc." is not a company name'],
+    });
+    expect(sha('criteria.yaml')).toBe(before);
   });
 });

@@ -13,6 +13,7 @@ import {
 } from '../sources/harvest.js';
 import { boardKey } from '../sources/links.js';
 import { GONE_STATUS, type Relocation, httpStatus, relocateBoard } from '../sources/relocate.js';
+import type { ApplyOption } from '../sources/types.js';
 import type { Clock } from '../util/clock.js';
 import type { Http } from '../util/http.js';
 import type { Logger } from '../util/logger.js';
@@ -29,6 +30,7 @@ export function storedSearchSources(db: Db): HarvestSource[] {
       companyName: companies.name,
       url: jobs.url,
       applyUrl: jobs.applyUrl,
+      applyOptions: jobs.applyOptions,
       description: jobs.descriptionText,
     })
     .from(jobs)
@@ -38,8 +40,13 @@ export function storedSearchSources(db: Db): HarvestSource[] {
     .all()
     .map((row) => ({
       companyName: row.companyName,
-      texts: [row.url, row.applyUrl, row.description],
+      texts: [row.url, row.applyUrl, row.description, ...optionUrls(row.applyOptions)],
     }));
+}
+
+/** A search hit's stored apply-option links, which harvest reads like any other link. */
+export function optionUrls(options: readonly ApplyOption[] | null | undefined): string[] {
+  return (options ?? []).map((o) => o.url);
 }
 
 export interface UpkeepDeps {

@@ -11,7 +11,7 @@ import {
 } from '../db/schema.js';
 import type { Clock } from '../util/clock.js';
 import { ageInDays } from './gate.js';
-import { rankedList } from './ranked.js';
+import { rankedList, rankingOf } from './ranked.js';
 import type { ScoringKey } from './score.js';
 
 /**
@@ -64,12 +64,7 @@ export function computeFunnel(
     .from(jobs)
     .all();
 
-  const scoredRows = rankedList(
-    db,
-    clock,
-    { weights: criteria.weights, bands: criteria.bands, current },
-    {},
-  );
+  const scoredRows = rankedList(db, clock, rankingOf(criteria, { current }), {});
   const unscoredRows = scoresRepo(db, clock).unscoredRows();
   const visibleIds = new Set([...scoredRows, ...unscoredRows].map((r) => r.jobId));
 

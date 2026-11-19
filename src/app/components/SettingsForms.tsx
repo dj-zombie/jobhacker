@@ -31,7 +31,11 @@ import {
   skillItemsFromText,
   skillItemsToText,
 } from '../../core/config/profile-sections.js';
-import { savePreferencesAction, saveProfileSectionAction } from '../lib/actions.js';
+import {
+  savePreferencesAction,
+  saveProfileSectionAction,
+  saveTargetCompaniesAction,
+} from '../lib/actions.js';
 import {
   type SettingsSectionKey,
   costBasisLabel,
@@ -42,6 +46,7 @@ import type {
   ProfileSettings,
   RescoreBasisView,
   SettingsSaveResult,
+  TargetCompanyReport,
 } from '../lib/settings-types.js';
 
 const PROFILE_HREF = '/settings/profile';
@@ -50,6 +55,7 @@ const TABS = [
   { href: '/settings/answers', label: 'Answers' },
   { href: '/settings/self-id', label: 'Self-ID' },
   { href: '/settings/preferences', label: 'Preferences' },
+  { href: '/settings/companies', label: 'Companies' },
 ];
 
 const YEAR_ONLY =
@@ -411,5 +417,67 @@ export function PreferencesSettingsForm({
       </SettingsSection>
       {form.notice}
     </>
+  );
+}
+
+function companyCounts(report: TargetCompanyReport, listed: boolean): string {
+  if (!listed) return 'No companies on the list yet.';
+  const jobs = `${report.openJobs.toLocaleString('en-US')} open ${report.openJobs === 1 ? 'job' : 'jobs'}`;
+  const waiting = `${report.unscoredJobs.toLocaleString('en-US')} not scored yet`;
+  return `${jobs} · ${waiting}.`;
+}
+
+/** Settings → Companies: the names that get a rank bump, saved to criteria.yaml. */
+export function CompaniesSettingsForm({
+  text,
+  report: initial,
+}: {
+  text: string;
+  report: TargetCompanyReport;
+}) {
+  const [report, setReport] = React.useState(initial);
+  const [savedText, setSavedText] = React.useState(text);
+  React.useEffect(() => {
+    setReport(initial);
+    setSavedText(text);
+  }, [text, initial]);
+  const form = useSaveFlow<string, string>({
+    section: 'companies',
+    initial: text,
+    toWire: same,
+    fromWire: same,
+    save: async (value) => {
+      const result = await saveTargetCompaniesAction(value);
+      if (result.status === 'saved') {
+        setSavedText(result.value);
+        if (result.report) setReport(result.report);
+      }
+      return result;
+    },
+    file: 'criteria.yaml',
+  });
+  return (
+    <SettingsSection
+      id="companies"
+      title="Companies"
+      description="One company per line. A decent fit at one of these moves up into Strong, and the job says why. A poor role stays weak. Saving re-ranks at once, with no model call. A company on the blocklist stays hidden. Job boards stay as they are. Saved to criteria.yaml."
+      error={form.sectionError}
+      footer={form.bar}
+    >
+      <TextBlock
+        path="companies"
+        label="Companies"
+        value={form.draft}
+        onChange={form.setDraft}
+        errors={form.errors}
+        hint="Stripe matches Stripe, Inc. Riot matches Riot Games."
+        minRows={8}
+        maxRows={18}
+      />
+      <SettingsNote tone="info">{companyCounts(report, savedText.trim().length > 0)}</SettingsNote>
+      {report.unseen.length > 0 ? (
+        <SettingsNote tone="flag">Not seen yet: {report.unseen.join(', ')}</SettingsNote>
+      ) : null}
+    </SettingsSection>
   );
 }

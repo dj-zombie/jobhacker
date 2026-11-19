@@ -1,5 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Ats } from '../../config/schemas.js';
+import type { ApplyOption } from '../../sources/types.js';
+import { preferTargetCompanies } from '../../util/company-match.js';
 import type { Db } from '../client.js';
 import { type Job, type JobStatus, type ScoreState, companies, jobs } from '../schema.js';
 import { inAreas } from './areas.js';
@@ -26,6 +28,8 @@ export interface JobWrite {
   sourceKind?: 'board' | 'search';
   sourceName?: string;
   sourceQuality?: 'high' | 'medium' | 'low';
+  /** A search hit's apply links. Undefined leaves the stored value as it is. */
+  applyOptions?: ApplyOption[] | null;
 }
 
 export interface UpsertResult {
@@ -71,6 +75,17 @@ export interface ScorableOrder {
   key?: Omit<ScoreKey, 'jobId' | 'contentHash'>;
   /** Areas whose jobs go first. Absent or empty: no place goes first. */
   first?: readonly string[];
+  /**
+   * Companies suggested or confirmed as this industry go first, ahead of
+   * `first`. Absent: no industry goes first. Never skips a job (J26).
+   */
+  industry?: string;
+  /**
+   * Within each industry group, place group and deferral tier, a job that is
+   * not already scored under `key` at one of these companies goes first (J27).
+   * Absent or empty: prescore order inside the tier.
+   */
+  targets?: readonly string[];
   /** Only these jobs ("Score this job"). Absent: every scorable job. */
   jobIds?: readonly number[];
 }
@@ -161,6 +176,7 @@ export function jobsRepo(db: Db) {
           sourceQuality,
           lastSeenAt: now,
           closedAt: null,
+          ...(row.applyOptions !== undefined ? { applyOptions: row.applyOptions } : {}),
           ...statusPatch,
           ...scorePatch,
         })
@@ -182,12 +198,21 @@ export function jobsRepo(db: Db) {
      * gates, regardless of human triage status (D46). Jobs in `order.first`
      * go before the rest; it orders, never skips (invariant 8). Within each
      * group, previously deferred and stale jobs go before newly pending work so
-     * a stream of new high-prescore jobs cannot starve them (D50); prescore
-     * orders within each tier.
+     * a stream of new high-prescore jobs cannot starve them (D50). Inside a
+     * tier, a not-yet-current job at a listed company goes before the rest
+     * (J27), and prescore orders what remains.
      */
     listScorable(order: ScorableOrder = {}): ScorableJob[] {
       const first = order.first ?? [];
       const inFirst = first.length > 0 ? sql`(${inAreas(first)})` : sql`0`;
+      const inIndustry = order.industry
+        ? sql`exists (
+            select 1 from company_industry
+            where company_industry.company_id = ${jobs.companyId}
+              and company_industry.industry_id = ${order.industry}
+              and company_industry.status in ('suggested', 'confirmed')
+          )`
+        : sql`0`;
       const key = order.key;
       const staleByKey = key
         ? sql`not exists (select 1 from job_scores s where s.job_id = ${jobs.id}
@@ -197,7 +222,7 @@ export function jobsRepo(db: Db) {
         : sql`0`;
       const current = key ? sql`not (${staleByKey})` : sql`0`;
       const only = order.jobIds ? [inArray(jobs.id, [...order.jobIds])] : [];
-      return db
+      const rows = db
         .select({
           id: jobs.id,
           companyName: companies.name,
@@ -213,6 +238,13 @@ export function jobsRepo(db: Db) {
           contentHash: jobs.contentHash,
           prescore: jobs.prescore,
           inFirst: sql<boolean>`${inFirst}`.mapWith((value) => value === 1),
+          inIndustry: sql<boolean>`${inIndustry}`.mapWith((value) => value === 1),
+          tier: sql<number>`case
+            when ${jobs.scoreState} in ('run_cap', 'stale') then 0
+            when ${jobs.scoreState} = 'pending' then 1
+            when ${jobs.scoreState} = 'llm_error' then 2
+            when ${staleByKey} then 0
+            else 3 end`.mapWith(Number),
           current: sql<boolean>`${current}`.mapWith((value) => value === 1),
         })
         .from(jobs)
@@ -226,6 +258,7 @@ export function jobsRepo(db: Db) {
           ),
         )
         .orderBy(
+          ...(order.industry ? [sql`${inIndustry} desc`] : []),
           ...(first.length > 0 ? [sql`${inFirst} desc`] : []),
           sql`case
             when ${jobs.scoreState} in ('run_cap', 'stale') then 0
@@ -239,6 +272,11 @@ export function jobsRepo(db: Db) {
           asc(jobs.id),
         )
         .all();
+      const ordered =
+        order.targets && order.targets.length > 0
+          ? preferTargetCompanies(rows, order.targets)
+          : rows;
+      return ordered.map(({ tier: _tier, inIndustry: _inIndustry, ...job }) => job);
     },
 
     /**

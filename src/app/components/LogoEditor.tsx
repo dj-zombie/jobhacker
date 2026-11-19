@@ -14,6 +14,7 @@ import {
   siteIconFromHtml,
 } from '../../core/brand/site-icon.js';
 import { setCompanyLogo } from '../lib/actions.js';
+import { play } from '../lib/sfx.js';
 
 /** A logo Kris just set, keyed by the company name the rows already show. */
 export interface LogoEdit {
@@ -281,6 +282,7 @@ function LogoPicker({
       });
       onClose();
     } catch (err) {
+      play('error');
       toast("Couldn't save that logo", {
         description: err instanceof Error ? err.message : String(err),
       });

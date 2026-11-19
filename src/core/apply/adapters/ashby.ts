@@ -1,3 +1,4 @@
+import { urlIsOn } from '../../util/host.js';
 import type { SafePage } from '../safe-page.js';
 import type { FormAdapter, RawFormField } from '../types.js';
 
@@ -19,7 +20,7 @@ export const ashbyAdapter: FormAdapter = {
   ats: 'ashby',
 
   canHandle(url: string): boolean {
-    return /ashbyhq\.com/i.test(url);
+    return urlIsOn(url, ['ashbyhq.com']);
   },
 
   async detectFields(page: SafePage): Promise<RawFormField[]> {
